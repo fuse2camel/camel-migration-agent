@@ -173,8 +173,8 @@ Our intelligent agent system automates this migration process by:
    - CI/CD Pipeline Agents generate pipeline configurations
 
 ### Current State (MVP)
-- ✅ Data pipeline implementation
-- ✅ Software migration agents
+- ✅ Data pipeline implementation for development
+- ✅ Agent tool ready to use as migration agents
 - ✅ Local code execution and testing
 - ✅ No automatic push back to repository (manual review required)
 - ✅ Docker container execution environment
@@ -294,7 +294,7 @@ flake8 src/
 
 ## 📄 License
 
-This project is licensed under the [Open Source License] - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the [Apache License 2.0] - see the [LICENSE](LICENSE) file for details.
 
 
 ## 🙏 Acknowledgments

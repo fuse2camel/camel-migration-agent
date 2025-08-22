@@ -29,7 +29,6 @@ else:
 
 # Export commonly used environment variables
 MODEL_API_KEY = os.getenv("MODEL_API_KEY")
-OPENAI_API_KEY = os.getenv("MODEL_API_KEY")  # Fallback to MODEL_API_KEY
 MODEL_BASE_URL = os.getenv("MODEL_BASE_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
 MODEL_TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.7"))

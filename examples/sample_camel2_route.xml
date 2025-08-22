@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sample Camel 2 XML Route for testing migration -->
+<routes xmlns="http://camel.apache.org/schema/spring">
+    
+    <!-- Simple timer route -->
+    <route id="timer-route">
+        <from uri="timer:myTimer?period=5000"/>
+        <log message="Timer fired at ${header.firedTime}"/>
+        <to uri="log:timerOutput"/>
+    </route>
+    
+    <!-- File processing route -->
+    <route id="file-route">
+        <from uri="file:input?delete=true"/>
+        <log message="Processing file: ${header.CamelFileName}"/>
+        <choice>
+            <when>
+                <simple>${header.CamelFileName} regex '.*\.xml$'</simple>
+                <to uri="file:output/xml"/>
+            </when>
+            <when>
+                <simple>${header.CamelFileName} regex '.*\.json$'</simple>
+                <to uri="file:output/json"/>
+            </when>
+            <otherwise>
+                <to uri="file:output/other"/>
+            </otherwise>
+        </choice>
+    </route>
+    
+    <!-- REST API route -->
+    <route id="rest-route">
+        <from uri="servlet:///hello"/>
+        <setBody>
+            <simple>Hello ${header.name}</simple>
+        </setBody>
+        <setHeader name="Content-Type">
+            <constant>text/plain</constant>
+        </setHeader>
+    </route>
+    
+    <!-- JMS route -->
+    <route id="jms-route">
+        <from uri="jms:queue:orders"/>
+        <log message="Received order: ${body}"/>
+        <process ref="orderProcessor"/>
+        <to uri="jms:queue:processedOrders"/>
+    </route>
+    
+    <!-- Error handling route -->
+    <route id="error-route" errorHandlerRef="deadLetterErrorHandler">
+        <from uri="direct:processWithError"/>
+        <log message="Processing message: ${body}"/>
+        <bean ref="riskyProcessor" method="process"/>
+        <to uri="direct:success"/>
+    </route>
+    
+</routes>

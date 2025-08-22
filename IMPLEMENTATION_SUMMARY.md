@@ -59,7 +59,7 @@ pip install -r requirements.txt
 
 # Configure API keys
 cp .env.example .env
-# Edit .env with your OpenAI API key
+# Edit .env with your OpenAI client compatable API key
 ```
 
 2. **Validate Environment**:

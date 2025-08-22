@@ -5,7 +5,7 @@ Config Agent - Validates the local system environment for Camel migration
 import json
 from typing import Dict, Any
 from crewai import Agent, Task, Crew
-from crewai_tools import tool
+from crewai.tools import tool
 from langchain_openai import ChatOpenAI
 import sys
 import os
@@ -15,7 +15,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.system_tools import validate_environment
 from config.llm_config import get_llm
-from config.global_config import AGENT_CONFIG
 
 
 class ConfigAgent:

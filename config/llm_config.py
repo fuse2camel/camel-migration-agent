@@ -51,3 +51,8 @@ default_llm = model_config.get_llm()
 creative_llm = model_config.get_llm(temperature=0.9, max_tokens=1000)  # creative writing
 analytical_llm = model_config.get_llm(temperature=0.3, max_tokens=1500)  # analytical
 structured_llm = model_config.get_llm(temperature=0.1, max_tokens=3000)  # structured output
+
+# Standalone function for backward compatibility
+def get_llm(temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> ChatOpenAI:
+    """Get an LLM instance with optional custom parameters"""
+    return model_config.get_llm(temperature=temperature, max_tokens=max_tokens)

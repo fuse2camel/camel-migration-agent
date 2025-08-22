@@ -8,7 +8,7 @@ import sys
 import time
 from typing import Dict, Any, Optional
 from crewai import Agent, Task, Crew
-from crewai_tools import tool
+from crewai.tools import tool
 from pathlib import Path
 
 # Add parent directory to path for imports

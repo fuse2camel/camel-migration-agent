@@ -56,3 +56,8 @@ structured_llm = model_config.get_llm(temperature=0.1, max_tokens=3000)  # struc
 def get_llm(temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> ChatOpenAI:
     """Get an LLM instance with optional custom parameters"""
     return model_config.get_llm(temperature=temperature, max_tokens=max_tokens)
+
+# Alias for backward compatibility with tests
+def get_llm_config(temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> ChatOpenAI:
+    """Alias for get_llm - for backward compatibility"""
+    return get_llm(temperature=temperature, max_tokens=max_tokens)

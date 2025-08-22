@@ -1,0 +1,12 @@
+{
+  "phases": [
+    "coordinator",
+    "git_agent",
+    "jdk_agent",
+    "rewrite_agent",
+    "tests_agent",
+    "qa_agent",
+    "commit_agent",
+    "reporter"
+  ]
+}

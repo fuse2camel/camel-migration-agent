@@ -1,0 +1,190 @@
+<!doctype html><html><head>
+<meta charset="utf-8" /><title>Coordinator Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+:root { color-scheme: dark; font-family: ui-sans-serif, system-ui; }
+body { margin: 24px; }
+.grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+.card { border: 1px solid #333; border-radius: 12px; padding: 16px; }
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.ok { background:#1b4332; } .err { background:#5b1b1b; }
+.pending { background:#334155; } .blinky { animation: blink 1s linear infinite; }
+@keyframes blink { 50% { opacity: 0.4; } }
+.gray { filter: grayscale(80%); opacity: 0.6; }
+table { width:100%; border-collapse: collapse; }
+th, td { border-bottom: 1px solid #333; padding: 8px; text-align:left; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+#flow svg { width: 100%; height: auto; }
+button { cursor: pointer; }
+</style>
+<script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs"></script>
+<script> mermaid.initialize({ startOnLoad: false, theme: 'dark' }); </script>
+</head><body>
+<h1>Coordinator Dashboard</h1>
+<p class="mono">Live status of phases with timings & logs</p>
+
+<div class="grid">
+  <div class="card" style="grid-column:1/-1;display:flex;align-items:center;gap:12px;justify-content:space-between;">
+    <div>
+      <strong>Settings</strong>
+      <span class="mono" id="settings-status"></span>
+    </div>
+    <div class="mono">
+      Yellow hold (sec): <input id="yellow-hold" type="number" min="0" max="10" step="0.5" value="0" style="width:6rem;">
+      <button id="apply-settings">Apply</button>
+    </div>
+  </div>
+
+  <div class="card"><h2>Flow</h2><div id="flow"></div></div>
+  <div class="card"><h2>Run Summary</h2><div id="summary"></div></div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <h2>Events</h2>
+  <table id="events"><thead>
+    <tr><th>Time</th><th>Phase</th><th>Status</th><th>Duration</th><th>Message</th></tr>
+  </thead><tbody></tbody></table>
+</div>
+
+<div id="modal" style="display:none; position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,.6);">
+  <div style="max-width:640px;margin:10% auto;background:#0b0b0b;border:1px solid #333;border-radius:12px;padding:16px;">
+    <h3 id="modal-title">Action Required</h3>
+    <p id="modal-text" class="mono"></p>
+    <div id="modal-options"></div>
+    <div id="new-branch" style="margin-top:8px; display:none;">
+      <label class="mono">New branch name:</label>
+      <input id="new-branch-input" class="mono" style="width:100%;padding:8px;border:1px solid #333;background:#111;color:#eee;border-radius:8px;">
+    </div>
+    <div id="generic-input" style="margin-top:8px; display:none;">
+      <label id="generic-input-label" class="mono">Value:</label>
+      <input id="generic-input-field" class="mono" style="width:100%;padding:8px;border:1px solid #333;background:#111;color:#eee;border-radius:8px;">
+    </div>
+    <div style="margin-top:12px;text-align:right;">
+      <button id="modal-submit" style="padding:8px 12px;border:1px solid #444;background:#1e293b;color:#fff;border-radius:8px;">Submit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let phases = ["coordinator","git_agent","reporter"]; // will be replaced by /flow
+const phaseInfo = {};
+function fmtTs(ts){ try { const d=new Date(ts*1000); return d.toLocaleTimeString(); } catch(e){ return ''; } }
+function fmtMs(ms){ if(!ms) return ''; if(ms<1000) return `${ms} ms`; return `${(ms/1000).toFixed(2)} s`; }
+
+function renderFlow() {
+  let graph = "flowchart LR\n";
+  for (const p of phases) {
+    const info = phaseInfo[p] || {status:"pending", duration:0};
+    let color = "#64748b";
+    if (info.status==="success") color = "#16a34a";
+    else if (info.status==="start") color = "#eab308";
+    else if (info.status==="error") color = "#ef4444";
+    const label = `${p}\\n${fmtMs(info.duration)}`;
+    graph += `${p}([\"${label}\"]):::${p}\n`;
+    graph += `classDef ${p} fill:${color},stroke:#333,stroke-width:1px,color:#000;\n`
+  }
+  for (let i=0;i<phases.length-1;i++){ graph += `${phases[i]}-->${phases[i+1]}\n`; }
+  mermaid.render(`m${Date.now()}`, graph).then(({svg})=>{
+    const container = document.getElementById("flow");
+    container.innerHTML = svg;
+    for (const p of phases) {
+      const info = phaseInfo[p] || {status:"pending"};
+      const el = container.querySelector(`#${p}`) || container.querySelector(`[id^='${p}']`);
+      if (!el) continue;
+      if (info.status==="start") el.classList.add("blinky"); else el.classList.remove("blinky");
+      if (info.status==="pending") el.classList.add("gray"); else el.classList.remove("gray");
+    }
+  });
+}
+
+function renderSummary() {
+  const done = Object.values(phaseInfo).filter(x => x.status==='success').length;
+  const err  = Object.values(phaseInfo).filter(x => x.status==='error').length;
+  const total= phases.length;
+  document.getElementById("summary").innerHTML = `
+    <p><span class='badge ok'>${done}/${total} succeeded</span>
+       <span class='badge err' style='margin-left:8px'>${err} error(s)</span></p>
+    <ul>${phases.map(p=>`<li><span class=\"mono\">${p}</span>: ${(phaseInfo[p]||{status:'pending'}).status} ${(phaseInfo[p]||{}).duration?`(${fmtMs((phaseInfo[p]||{}).duration)})`:''}</li>`).join('')}</ul>`;
+}
+
+function addRow(e) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class='mono'>${fmtTs(e.ts)}</td>
+                  <td class='mono'>${e.phase||e.type}</td>
+                  <td>${e.status || e.type}</td>
+                  <td class='mono'>${fmtMs(e.duration_ms||0)}</td>
+                  <td class='mono'>${(e.message||e.prompt?.title||'').toString().slice(0,160)}</td>`;
+  document.querySelector('#events tbody').prepend(tr);
+}
+
+function handlePrompt(e){
+  const prompt = e.prompt;
+  const modal = document.getElementById("modal");
+  const title = document.getElementById("modal-title");
+  const text = document.getElementById("modal-text");
+  const opts = document.getElementById("modal-options");
+  const newBranch = document.getElementById("new-branch");
+  const input = document.getElementById("new-branch-input");
+  const genBlock = document.getElementById("generic-input");
+  const genLabel = document.getElementById("generic-input-label");
+  const genField = document.getElementById("generic-input-field");
+  const submit = document.getElementById("modal-submit");
+  title.textContent = prompt.title || "Action Required";
+  text.textContent = prompt.text || "";
+  opts.innerHTML = "";
+  newBranch.style.display = "none"; input.value = "";
+  (prompt.options || []).forEach((opt, i)=>{
+    const lbl = document.createElement("label");
+    lbl.className = "mono"; lbl.style.display = "block";
+    lbl.innerHTML = `<input type='radio' name='decision' value='${opt}' ${opt===prompt.default?'checked':''}/> ${opt}`;
+    opts.appendChild(lbl);
+  });
+  opts.addEventListener("change", ()=>{
+    const v = (document.querySelector("input[name='decision']:checked")||{}).value;
+    newBranch.style.display = (v==='create-new') ? 'block' : 'none';
+  }, { once: true });
+  submit.onclick = async ()=>{
+    const choice = (document.querySelector("input[name='decision']:checked")||{}).value || prompt.default || "override";
+    const payload = { choice };
+    if (choice==='create-new') { payload.new_branch_name = input.value || `${prompt.payload.branch}-new`; }
+    await fetch(`/decision/${prompt.id}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    modal.style.display = "none";
+  };
+  modal.style.display = "block";
+}
+
+function handle(e){
+  if(e.type === 'prompt'){ handlePrompt(e); return; }
+  if(e.phase && !phaseInfo[e.phase]) phaseInfo[e.phase] = {status:'pending', duration:0};
+  if(e.phase){
+    const info = phaseInfo[e.phase];
+    info.status = e.status || 'success';
+    if (e.duration_ms) info.duration = e.duration_ms;
+    info.lastMessage = e.message || '';
+  }
+}
+
+async function bootstrap() {
+  // load flow and settings first
+  try { const f = await fetch('/flow'); const jf = await f.json(); if (Array.isArray(jf.phases) && jf.phases.length) phases = jf.phases; } catch(e){}
+  try {
+    const s = await fetch('/settings'); const js = await s.json();
+    const inp = document.getElementById('yellow-hold');
+    if (typeof js.demo_yellow_secs === 'number') inp.value = js.demo_yellow_secs;
+  } catch(e) {}
+
+  const res = await fetch('/events'); const list = await res.json();
+  for (const e of list) { if(e.type==='prompt') handlePrompt(e); else { handle(e); addRow(e); } }
+  renderFlow(); renderSummary();
+  const es = new EventSource('/sse');
+  es.onmessage = (ev)=>{ const e = JSON.parse(ev.data); if(e.type==='prompt'){ handlePrompt(e); } else { handle(e); addRow(e); renderFlow(); renderSummary(); } };
+
+  document.getElementById('apply-settings').onclick = async ()=>{
+    const v = parseFloat(document.getElementById('yellow-hold').value||'0')||0;
+    await fetch('/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({demo_yellow_secs: v})});
+    const s = document.getElementById('settings-status'); s.textContent = `Saved (${v}s)`; setTimeout(()=> s.textContent='', 1500);
+  };
+}
+bootstrap();
+</script>
+</body></html>

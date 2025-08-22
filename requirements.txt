@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 langgraph==0.6.4
 llama-index==0.12.47
 llama-index-vector-stores-faiss==0.4.0
@@ -22,14 +21,8 @@ pytest-asyncio==0.24.0
 pytest-mock==3.14.0
 lxml==5.3.0
 javalang==0.13.0
-=======
-langgraph>=0.2.0
-gitpython>=3.1.43
-pydantic>=2.7.0
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 rich>=13.7.1
-python-dotenv>=1.0.1
 requests>=2.31.0
 reportlab>=4.0.0
->>>>>>> e98ed6a4d0337e6359ba1b0b82cd288cf9e02990

@@ -20,7 +20,7 @@ class ModelConfig:
     def __init__(self):
         # Use values from global config
         self.api_key = MODEL_API_KEY
-        self.model_name = MODEL_MODEL
+        self.model_name = MODEL_NAME
         self.base_url = MODEL_BASE_URL
         self.temperature = MODEL_TEMPERATURE
         self.max_tokens = MODEL_MAX_TOKENS
@@ -42,12 +42,12 @@ class ModelConfig:
         )
 
 # global config
-MODEL_config = MODELConfig()
+model_config = ModelConfig()
 
 # default LLM instance
-default_llm = MODEL_config.get_llm()
+default_llm = model_config.get_llm()
 
 # config
-creative_llm = MODEL_config.get_llm(temperature=0.9, max_tokens=1000)  # creative writing
-analytical_llm = MODEL_config.get_llm(temperature=0.3, max_tokens=1500)  # analytical
-structured_llm = MODEL_config.get_llm(temperature=0.1, max_tokens=3000)  # structured output
+creative_llm = model_config.get_llm(temperature=0.9, max_tokens=1000)  # creative writing
+analytical_llm = model_config.get_llm(temperature=0.3, max_tokens=1500)  # analytical
+structured_llm = model_config.get_llm(temperature=0.1, max_tokens=3000)  # structured output

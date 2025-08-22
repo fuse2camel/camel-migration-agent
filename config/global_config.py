@@ -31,7 +31,7 @@ else:
 MODEL_API_KEY = os.getenv("MODEL_API_KEY")
 OPENAI_API_KEY = os.getenv("MODEL_API_KEY")  # Fallback to MODEL_API_KEY
 MODEL_BASE_URL = os.getenv("MODEL_BASE_URL")
-MODEL_MODEL = os.getenv("MODEL_MODEL")
+MODEL_NAME = os.getenv("MODEL_NAME")
 MODEL_TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.7"))
 MODEL_MAX_TOKENS = int(os.getenv("MODEL_MAX_TOKENS", "2000"))
 
@@ -64,7 +64,7 @@ def get_config_dict():
     return {
         "MODEL_API_KEY": MODEL_API_KEY,
         "MODEL_BASE_URL": MODEL_BASE_URL,
-        "MODEL_MODEL": MODEL_MODEL,
+        "MODEL_NAME": MODEL_NAME,
         "MODEL_TEMPERATURE": MODEL_TEMPERATURE,
         "MODEL_MAX_TOKENS": MODEL_MAX_TOKENS,
         "ENV_FILE": str(ENV_FILE),
@@ -79,7 +79,7 @@ def print_config_summary():
     print(f"Project Root: {PROJECT_ROOT}")
     print(f"Environment File: {ENV_FILE}")
     print(f"API Endpoint: {MODEL_BASE_URL}")
-    print(f"Model: {MODEL_MODEL}")
+    print(f"Model: {MODEL_NAME}")
     print(f"Temperature: {MODEL_TEMPERATURE}")
     print(f"Max Tokens: {MODEL_MAX_TOKENS}")
     print(f"API Key: {'✓ Set' if MODEL_API_KEY else '✗ Not Set'}")

@@ -1,12 +1,12 @@
 """
 Config Agent - Validates the local system environment for Camel migration
+Refactored to separate agent and task creation from crew execution
 """
 
 import json
 from typing import Dict, Any
-from crewai import Agent, Task, Crew
+from crewai import Agent, Task
 from crewai.tools import tool
-from langchain_openai import ChatOpenAI
 import sys
 import os
 
@@ -20,6 +20,7 @@ from config.llm_config import get_llm
 class ConfigAgent:
     """
     Agent responsible for validating the local system's environment
+    Only creates agents and tasks, does not execute crews
     """
     
     def __init__(self):
@@ -73,15 +74,15 @@ class ConfigAgent:
         result = validate_environment(requirements)
         return json.dumps(result, indent=2)
     
-    def validate(self, requirements_config: Dict[str, str] = None) -> Dict[str, Any]:
+    def create_validation_task(self, requirements_config: Dict[str, str] = None) -> Task:
         """
-        Validate the system environment.
+        Create a validation task for the system environment.
         
         Args:
             requirements_config: Dictionary with minimum version requirements
             
         Returns:
-            Validation report dictionary
+            CrewAI Task for validation
         """
         if requirements_config is None:
             requirements_config = {
@@ -91,8 +92,7 @@ class ConfigAgent:
                 "docker": "Any"
             }
         
-        # Create task for validation
-        validation_task = Task(
+        return Task(
             description=f"""
             Validate the local system environment for Camel migration.
             Check that all required tools are installed and meet these requirements:
@@ -103,38 +103,6 @@ class ConfigAgent:
             expected_output="A comprehensive validation report in JSON format",
             agent=self.agent
         )
-        
-        # Create crew and execute
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[validation_task],
-            verbose=True
-        )
-        
-        try:
-            result = crew.kickoff()
-            
-            # Parse the result
-            if isinstance(result, str):
-                try:
-                    validation_report = json.loads(result)
-                except json.JSONDecodeError:
-                    # If result is not JSON, create a simple report
-                    validation_report = {
-                        "overall_status": "Unknown",
-                        "raw_output": result
-                    }
-            else:
-                validation_report = result
-            
-            return validation_report
-            
-        except Exception as e:
-            return {
-                "overall_status": "Failure",
-                "error": str(e),
-                "message": f"Validation failed: {str(e)}"
-            }
     
     def get_validation_summary(self, validation_report: Dict[str, Any]) -> str:
         """

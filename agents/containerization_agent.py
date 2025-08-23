@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from typing import Dict, Any, Optional
-from crewai import Agent, Task, Crew
+from crewai import Agent, Task
 from crewai.tools import tool
 from pathlib import Path
 
@@ -92,15 +92,15 @@ class ContainerizationAgent:
         return json.dumps(result, indent=2)
     
 
-    def containerize_application(
+    def create_containerization_task(
         self,
         project_root_path: str,
         app_name: str = "camel-app",
         java_version: int = 17,
         build_image: bool = False
-    ) -> Dict[str, Any]:
+    ) -> Task:
         """
-        Containerize the Camel application using Docker.
+        Create a task for containerizing the Camel application using Docker.
         
         Args:
             project_root_path: Root directory of the project
@@ -109,10 +109,9 @@ class ContainerizationAgent:
             build_image: Whether to build the Docker image
             
         Returns:
-            Dictionary with containerization results
+            CrewAI Task for containerization
         """
-        # Create containerization task
-        containerization_task = Task(
+        return Task(
             description=f"""
             Containerize the Camel application using Docker:
             1. Generate an optimized Dockerfile for Java {java_version}
@@ -126,13 +125,6 @@ class ContainerizationAgent:
             """,
             expected_output="A report of generated Docker artifacts",
             agent=self.agent
-        )
-        
-        # Create crew and execute
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[containerization_task],
-            verbose=True
         )
         
         try:

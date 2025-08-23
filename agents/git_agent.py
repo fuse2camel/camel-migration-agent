@@ -1,13 +1,13 @@
-
 """
 Git Agent - Manages source code repository operations
+Refactored to separate agent and task creation from crew execution
 """
 
 import json
 import os
 import sys
 from typing import Dict, Any, Optional
-from crewai import Agent, Task, Crew
+from crewai import Agent, Task
 from crewai.tools import tool
 from pathlib import Path
 
@@ -27,6 +27,7 @@ from config.llm_config import get_llm
 class GitAgent:
     """
     Agent responsible for Git repository management
+    Only creates agents and tasks, does not execute crews
     """
 
     def __init__(self):
@@ -138,14 +139,14 @@ class GitAgent:
         result = get_repository_info(repo_path)
         return json.dumps(result, indent=2)
 
-    def initiate_workflow(
+    def create_initiate_task(
         self,
         repository_url: str,
         branch_name: str = "feature/camel4-migration",
         workspace_dir: str = "/tmp/camel-migration"
-    ) -> Dict[str, Any]:
+    ) -> Task:
         """
-        Initiate the migration workflow by cloning and preparing the repository.
+        Create task for initiating the migration workflow.
 
         Args:
             repository_url: URL of the repository to migrate
@@ -153,10 +154,12 @@ class GitAgent:
             workspace_dir: Directory to clone the repository to
 
         Returns:
-            Dictionary with operation results
+            CrewAI Task for workflow initiation
         """
-        # Create task for initiating workflow
-        initiate_task = Task(
+        # Store workspace path for later use
+        self.workspace_path = workspace_dir
+        
+        return Task(
             description=f"""
             Initiate the migration workflow:
             1. Clone the repository from: {repository_url}
@@ -170,49 +173,14 @@ class GitAgent:
             agent=self.agent
         )
 
-        # Create crew and execute
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[initiate_task],
-            verbose=True
-        )
-
-        try:
-            # Execute the workflow
-            result = crew.kickoff()
-
-            # Store workspace path for later use
-            self.workspace_path = workspace_dir
-
-            # Get actual repository info
-            repo_info = get_repository_info(workspace_dir)
-
-            return {
-                "status": "Success",
-                "workflow_stage": "initiate",
-                "local_path": workspace_dir,
-                "repository_url": repository_url,
-                "branch_name": branch_name,
-                "repository_info": repo_info,
-                "message": f"Successfully initiated workflow with repository cloned to {workspace_dir}"
-            }
-
-        except Exception as e:
-            return {
-                "status": "Failure",
-                "workflow_stage": "initiate",
-                "error": str(e),
-                "message": f"Failed to initiate workflow: {str(e)}"
-            }
-
-    def finalize_workflow(
+    def create_finalize_task(
         self,
         source_code_path: str,
         commit_message: str = "Migrate from Apache Camel 2 to Camel 4",
         branch_name: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> Task:
         """
-        Finalize the migration workflow by committing and pushing changes.
+        Create task for finalizing the migration workflow.
 
         Args:
             source_code_path: Path to the repository with changes
@@ -220,10 +188,9 @@ class GitAgent:
             branch_name: Optional branch name to push
 
         Returns:
-            Dictionary with operation results
+            CrewAI Task for workflow finalization
         """
-        # Create task for finalizing workflow
-        finalize_task = Task(
+        return Task(
             description=f"""
             Finalize the migration workflow:
             1. Stage all changes in the repository at: {source_code_path}
@@ -237,34 +204,20 @@ class GitAgent:
             agent=self.agent
         )
 
-        # Create crew and execute
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[finalize_task],
-            verbose=True
-        )
-
+    def get_repository_status(self, repo_path: str) -> Dict[str, Any]:
+        """
+        Get the current status of the repository.
+        
+        Args:
+            repo_path: Path to the repository
+            
+        Returns:
+            Dictionary with repository status information
+        """
         try:
-            # Execute the workflow
-            result = crew.kickoff()
-
-            # Get actual commit and push results
-            commit_result = commit_changes(source_code_path, commit_message)
-            push_result = push_changes(source_code_path, branch_name=branch_name)
-
-            return {
-                "status": "Success",
-                "workflow_stage": "finalize",
-                "commit_result": commit_result,
-                "push_result": push_result,
-                "pushed_branch_url": push_result.get("pushed_branch_url", ""),
-                "message": f"Successfully finalized workflow with changes pushed to remote"
-            }
-
+            return get_repository_info(repo_path)
         except Exception as e:
             return {
-                "status": "Failure",
-                "workflow_stage": "finalize",
-                "error": str(e),
-                "message": f"Failed to finalize workflow: {str(e)}"
+                "status": "error",
+                "message": str(e)
             }

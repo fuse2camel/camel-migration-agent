@@ -2,6 +2,7 @@
 """
 Main execution script for Camel Migration Agent
 Migrates Apache Camel 2 Spring Boot applications to Apache Camel 4
+Now uses LangGraph for orchestration instead of direct Crew execution
 """
 
 import argparse
@@ -16,23 +17,38 @@ load_dotenv()
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from orchestration.workflow import CamelMigrationWorkflow
+from orchestration.langgraph_workflow import CamelMigrationLangGraphWorkflow
 from agents.config_agent import ConfigAgent
+from crewai import Crew
 
 
 def validate_environment():
     """Quick environment validation before starting"""
     print("🔍 Performing quick environment check...")
     config_agent = ConfigAgent()
-    validation = config_agent.validate()
     
-    if validation.get("overall_status") != "Success":
-        print("\n❌ Environment validation failed!")
-        print(config_agent.get_validation_summary(validation))
+    # Create and execute validation task using a temporary crew
+    task = config_agent.create_validation_task()
+    crew = Crew(
+        agents=[config_agent.agent],
+        tasks=[task],
+        verbose=False
+    )
+    
+    try:
+        result = crew.kickoff()
+        validation = result if isinstance(result, dict) else {"overall_status": "Unknown", "result": str(result)}
+        
+        if validation.get("overall_status") != "Success":
+            print("\n❌ Environment validation failed!")
+            print(config_agent.get_validation_summary(validation))
+            return False
+        
+        print("✅ Environment validation passed!")
+        return True
+    except Exception as e:
+        print(f"\n❌ Environment validation error: {str(e)}")
         return False
-    
-    print("✅ Environment validation passed!")
-    return True
 
 
 def run_individual_agent(agent_name: str, **kwargs):
@@ -42,231 +58,263 @@ def run_individual_agent(agent_name: str, **kwargs):
     if agent_name == "config":
         from agents.config_agent import ConfigAgent
         agent = ConfigAgent()
-        result = agent.validate()
-        print(agent.get_validation_summary(result))
+        task = agent.create_validation_task()
+        crew = Crew(agents=[agent.agent], tasks=[task], verbose=True)
+        result = crew.kickoff()
+        print(f"Result: {result}")
         
     elif agent_name == "git":
         from agents.git_agent import GitAgent
         agent = GitAgent()
         if kwargs.get("action") == "clone":
-            result = agent.initiate_workflow(
+            task = agent.create_initiate_task(
                 repository_url=kwargs.get("repo_url"),
                 branch_name=kwargs.get("branch", "feature/camel4-migration"),
                 workspace_dir=kwargs.get("workspace", "/tmp/camel-migration")
             )
         else:
-            result = agent.finalize_workflow(
+            task = agent.create_finalize_task(
                 source_code_path=kwargs.get("workspace", "/tmp/camel-migration"),
                 commit_message=kwargs.get("message", "Camel 4 migration")
             )
+        crew = Crew(agents=[agent.agent], tasks=[task], verbose=True)
+        result = crew.kickoff()
         print(f"Result: {result}")
         
     elif agent_name == "dependency":
         from agents.dependency_agent import DependencyAgent
         agent = DependencyAgent()
         pom_path = os.path.join(kwargs.get("workspace", "."), "pom.xml")
-        if kwargs.get("action") == "analyze":
-            result = agent.analyze_dependencies(pom_path)
-        else:
-            result = agent.update_project_dependencies(pom_path)
-        print(f"Result: {result.get('summary', result)}")
+        task = agent.create_update_task(pom_path)
+        crew = Crew(agents=[agent.agent], tasks=[task], verbose=True)
+        result = crew.kickoff()
+        print(f"Result: {result}")
         
     elif agent_name == "dsl":
         from agents.dsl_conversion_agent import DSLConversionAgent
         agent = DSLConversionAgent()
-        result = agent.convert_routes(
+        task = agent.create_conversion_task(
             source_code_path=kwargs.get("workspace", "."),
             package_name=kwargs.get("package", "com.example.routes.migrated")
         )
-        print(agent.generate_conversion_report(result))
+        crew = Crew(agents=[agent.agent], tasks=[task], verbose=True)
+        result = crew.kickoff()
+        print(f"Result: {result}")
         
     elif agent_name == "service":
         from agents.service_refactor_agent import ServiceRefactorAgent
         agent = ServiceRefactorAgent()
-        result = agent.refactor_business_logic(
+        task = agent.create_refactor_task(
             source_code_path=kwargs.get("workspace", ".")
         )
-        print(f"Result: {result.get('summary', result)}")
+        crew = Crew(agents=[agent.agent], tasks=[task], verbose=True)
+        result = crew.kickoff()
+        print(f"Result: {result}")
         
     elif agent_name == "test":
         from agents.test_agent import TestAgent
         agent = TestAgent()
-        result = agent.validate_migration(
+        task = agent.create_test_task(
             project_root_path=kwargs.get("workspace", "."),
             run_full_tests=kwargs.get("full_tests", False)
         )
-        print(agent.generate_test_report(result))
+        crew = Crew(agents=[agent.agent], tasks=[task], verbose=True)
+        result = crew.kickoff()
+        print(f"Result: {result}")
         
     elif agent_name == "container":
         from agents.containerization_agent import ContainerizationAgent
         agent = ContainerizationAgent()
-        result = agent.containerize_application(
+        task = agent.create_containerization_task(
             project_root_path=kwargs.get("workspace", "."),
             app_name=kwargs.get("app_name", "camel-app"),
-            java_version=kwargs.get("java_version", 17),
-            build_image=kwargs.get("build", False)
+            java_version=kwargs.get("java_version", 17)
         )
-        print(f"Result: {result.get('summary', result)}")
+        crew = Crew(agents=[agent.agent], tasks=[task], verbose=True)
+        result = crew.kickoff()
+        print(f"Result: {result}")
         
     else:
-        print(f"Unknown agent: {agent_name}")
+        print(f"❌ Unknown agent: {agent_name}")
         print("Available agents: config, git, dependency, dsl, service, test, container")
 
 
+def run_full_migration(
+    repository_url: str,
+    branch_name: str = "feature/camel4-migration",
+    workspace: str = "/tmp/camel-migration",
+    java_version: int = 17,
+    skip_validation: bool = False,
+    checkpoint: bool = False
+):
+    """
+    Run the complete migration workflow using LangGraph
+    """
+    # Validate environment first
+    if not skip_validation:
+        if not validate_environment():
+            print("\n⚠️  Environment validation failed. Use --skip-validation to bypass.")
+            return
+    
+    print("\n" + "="*60)
+    print("🚀 STARTING CAMEL 2 TO CAMEL 4 MIGRATION")
+    print("="*60)
+    print(f"Repository: {repository_url}")
+    print(f"Branch: {branch_name}")
+    print(f"Workspace: {workspace}")
+    print(f"Java Version: {java_version}")
+    print(f"Checkpointing: {'Enabled' if checkpoint else 'Disabled'}")
+    print("="*60 + "\n")
+    
+    # Initialize the LangGraph workflow
+    workflow = CamelMigrationLangGraphWorkflow(checkpoint=checkpoint)
+    
+    # Run the migration
+    result = workflow.run_migration(
+        repository_url=repository_url,
+        branch_name=branch_name,
+        workspace_dir=workspace,
+        java_version=java_version
+    )
+    
+    # Display results
+    print("\n" + "="*60)
+    print("📊 MIGRATION RESULTS")
+    print("="*60)
+    
+    if result.get("success"):
+        print("✅ Migration completed successfully!")
+    else:
+        print("❌ Migration failed or partially completed")
+    
+    if result.get("report"):
+        print("\n" + result["report"])
+    
+    if result.get("errors"):
+        print("\n⚠️  Errors encountered:")
+        for error in result["errors"]:
+            print(f"  - {error}")
+    
+    print("\n" + "="*60)
+    print("Migration process finished")
+    print("="*60)
+    
+    return result
+
+
 def main():
-    """Main entry point"""
+    """Main entry point for the Camel Migration Agent"""
     parser = argparse.ArgumentParser(
-        description="Camel Migration Agent - Migrate Apache Camel 2 to Camel 4",
+        description="Camel Migration Agent - Migrate Apache Camel 2 to Camel 4 with LangGraph orchestration",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run full migration workflow
+  # Run full migration
   python main.py --repo https://github.com/user/camel-app.git
-
-  # Run with custom settings
-  python main.py --repo https://github.com/user/camel-app.git \\
-                 --branch my-migration \\
-                 --workspace /path/to/workspace \\
-                 --java 17
-
-  # Test individual agents
+  
+  # Run with custom workspace
+  python main.py --repo https://github.com/user/camel-app.git --workspace /path/to/workspace
+  
+  # Test individual agent
   python main.py --test-agent config
-  python main.py --test-agent dependency --workspace /path/to/project
-
-  # Use the sample Fuse 6 application
-  python main.py --repo https://github.com/fuse2camel/sample-fuse6-app.git
+  python main.py --test-agent git --repo-url https://github.com/user/app.git
+  
+  # Validate environment only
+  python main.py --validate-only
+  
+  # Enable checkpointing for resumable workflows
+  python main.py --repo https://github.com/user/app.git --checkpoint
         """
     )
     
-    # Workflow arguments
-    parser.add_argument(
-        "--repo",
-        type=str,
-        help="Git repository URL to migrate"
-    )
-    parser.add_argument(
-        "--branch",
-        type=str,
-        default="feature/camel4-migration",
-        help="Branch name for migration (default: feature/camel4-migration)"
-    )
-    parser.add_argument(
-        "--workspace",
-        type=str,
-        default="/tmp/camel-migration",
-        help="Local workspace directory (default: /tmp/camel-migration)"
-    )
-    parser.add_argument(
-        "--java",
-        type=int,
-        default=17,
-        choices=[11, 17, 21],
-        help="Target Java version (default: 17)"
-    )
-    parser.add_argument(
-        "--skip-container",
-        action="store_true",
-        help="Skip containerization step"
-    )
-    parser.add_argument(
-        "--skip-tests",
-        action="store_true",
-        help="Skip running tests"
-    )
+    # Main arguments
+    parser.add_argument('--repo', '--repository', 
+                        help='Git repository URL to migrate')
+    parser.add_argument('--branch', 
+                        default='feature/camel4-migration',
+                        help='Branch name for migration (default: feature/camel4-migration)')
+    parser.add_argument('--workspace', 
+                        default='/tmp/camel-migration',
+                        help='Local workspace directory (default: /tmp/camel-migration)')
+    parser.add_argument('--java-version', 
+                        type=int,
+                        default=17,
+                        choices=[11, 17, 21],
+                        help='Target Java version (default: 17)')
     
-    # Testing arguments
-    parser.add_argument(
-        "--test-agent",
-        type=str,
-        choices=["config", "git", "dependency", "dsl", "service", "test", "container"],
-        help="Test a specific agent individually"
-    )
-    parser.add_argument(
-        "--action",
-        type=str,
-        help="Action for test agent (e.g., 'analyze' for dependency agent)"
-    )
-    parser.add_argument(
-        "--validate-only",
-        action="store_true",
-        help="Only validate environment without running migration"
-    )
+    # Workflow options
+    parser.add_argument('--checkpoint',
+                        action='store_true',
+                        help='Enable checkpointing for resumable workflows')
+    parser.add_argument('--skip-validation',
+                        action='store_true',
+                        help='Skip environment validation')
     
-    # Parse arguments
+    # Testing options
+    parser.add_argument('--test-agent',
+                        choices=['config', 'git', 'dependency', 'dsl', 'service', 'test', 'container'],
+                        help='Test a specific agent')
+    parser.add_argument('--validate-only',
+                        action='store_true',
+                        help='Only validate the environment')
+    
+    # Agent-specific options
+    parser.add_argument('--action',
+                        help='Action for agent testing (e.g., clone, push for git agent)')
+    parser.add_argument('--repo-url',
+                        help='Repository URL for agent testing')
+    parser.add_argument('--package',
+                        default='com.example.routes.migrated',
+                        help='Java package name for converted routes')
+    parser.add_argument('--app-name',
+                        default='camel-app',
+                        help='Application name for containerization')
+    parser.add_argument('--full-tests',
+                        action='store_true',
+                        help='Run full test suite')
+    parser.add_argument('--message',
+                        default='Migrate from Apache Camel 2 to Camel 4',
+                        help='Commit message for git operations')
+    
     args = parser.parse_args()
     
-    # Validate environment first
-    if not validate_environment():
-        if not args.validate_only:
-            print("\n⚠️  Environment validation failed. Fix the issues above before proceeding.")
-            print("   You can run with --validate-only to see detailed validation results.")
-            sys.exit(1)
-    
+    # Handle different execution modes
     if args.validate_only:
-        print("\n✅ Environment validation complete.")
-        sys.exit(0)
-    
-    # Test individual agent if requested
-    if args.test_agent:
+        # Only validate environment
+        success = validate_environment()
+        sys.exit(0 if success else 1)
+        
+    elif args.test_agent:
+        # Test individual agent
         run_individual_agent(
             args.test_agent,
-            repo_url=args.repo,
-            branch=args.branch,
+            action=args.action,
+            repo_url=args.repo_url or args.repo,
             workspace=args.workspace,
-            java_version=args.java,
-            action=args.action
-        )
-        sys.exit(0)
-    
-    # Check if repository URL is provided
-    if not args.repo:
-        print("\n❌ Error: Repository URL is required!")
-        print("   Use --repo <url> to specify the repository to migrate")
-        print("   Example: python main.py --repo https://github.com/fuse2camel/sample-fuse6-app.git")
-        parser.print_help()
-        sys.exit(1)
-    
-    # Run the full migration workflow
-    print("\n" + "=" * 70)
-    print("CAMEL MIGRATION AGENT")
-    print("Apache Camel 2 to Camel 4 Migration Tool")
-    print("=" * 70)
-    
-    workflow = CamelMigrationWorkflow()
-    
-    try:
-        result = workflow.run(
-            repository_url=args.repo,
-            branch_name=args.branch,
-            workspace_dir=args.workspace,
-            java_version=args.java,
-            skip_containerization=args.skip_container
+            branch=args.branch,
+            package=args.package,
+            app_name=args.app_name,
+            java_version=args.java_version,
+            full_tests=args.full_tests,
+            message=args.message
         )
         
-        if result.get("migration_complete"):
-            print("\n✅ Migration completed successfully!")
-            
-            # Show important outputs
-            if result.get("git_status", {}).get("pushed_branch_url"):
-                print(f"\n📌 Migration branch: {result['git_status']['pushed_branch_url']}")
-            
-            print(f"\n📁 Workspace: {args.workspace}")
-            print(f"📄 Report: {os.path.join(args.workspace, 'migration-report.txt')}")
-            
-            sys.exit(0)
-        else:
-            print("\n❌ Migration failed!")
-            if result.get("error"):
-                print(f"   Error: {result['error']}")
-            sys.exit(1)
-            
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Migration interrupted by user")
-        sys.exit(130)
-    except Exception as e:
-        print(f"\n❌ Unexpected error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    elif args.repo:
+        # Run full migration workflow
+        result = run_full_migration(
+            repository_url=args.repo,
+            branch_name=args.branch,
+            workspace=args.workspace,
+            java_version=args.java_version,
+            skip_validation=args.skip_validation,
+            checkpoint=args.checkpoint
+        )
+        sys.exit(0 if result.get("success") else 1)
+        
+    else:
+        # No valid action specified
+        parser.print_help()
+        print("\n❌ Error: Please specify either --repo for full migration or --test-agent for testing")
         sys.exit(1)
 
 

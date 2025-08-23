@@ -19,16 +19,23 @@ def test_config_agent():
     print("=" * 50)
     try:
         from agents.config_agent import ConfigAgent
+        from crewai import Crew
         
         agent = ConfigAgent()
         
-        # Test validation with empty requirements
-        result = agent.validate(requirements_config={})
-        print(f"✅ Config Agent validation result: {result.get('status', 'unknown')}")
+        # Test task creation
+        task = agent.create_validation_task(requirements_config={})
+        print(f"✅ Config Agent task created successfully")
         
-        # Get summary
-        summary = agent.get_validation_summary(result)
-        print(f"   Summary: {summary[:100]}..." if len(summary) > 100 else f"   Summary: {summary}")
+        # Test that agent and task are properly configured
+        assert agent.agent is not None, "Agent not initialized"
+        assert task is not None, "Task not created"
+        assert task.agent == agent.agent, "Task not assigned to agent"
+        
+        # Optionally test execution with a crew (for validation)
+        # crew = Crew(agents=[agent.agent], tasks=[task], verbose=False)
+        # result = crew.kickoff()
+        # print(f"   Validation result: {result}")
         
         return True
     except Exception as e:
@@ -236,12 +243,22 @@ def test_workflow():
     print("TEST: Complete Workflow")
     print("=" * 50)
     try:
+        # Test both workflows for compatibility
         from orchestration.workflow import CamelMigrationWorkflow
+        from orchestration.langgraph_workflow import CamelMigrationLangGraphWorkflow
         
+        # Test original workflow
         workflow = CamelMigrationWorkflow()
+        print(f"✅ Original workflow created successfully")
         
-        print(f"✅ Workflow created successfully")
-        print(f"   Stages: {', '.join([s.value for s in workflow.stages]) if hasattr(workflow, 'stages') else 'N/A'}")
+        # Test new LangGraph workflow
+        langgraph_workflow = CamelMigrationLangGraphWorkflow(checkpoint=False)
+        print(f"✅ LangGraph workflow created successfully")
+        
+        # Verify workflow has necessary components
+        assert langgraph_workflow.workflow is not None, "LangGraph workflow not initialized"
+        assert langgraph_workflow.config_agent is not None, "Config agent not initialized"
+        
         return True
     except Exception as e:
         print(f"❌ Workflow failed: {e}")

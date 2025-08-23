@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from typing import Dict, Any, List
-from crewai import Agent, Task, Crew
+from crewai import Agent, Task
 from crewai.tools import tool
 from pathlib import Path
 import glob
@@ -131,29 +131,29 @@ public class {class_name} implements Processor {{
 }}"""
         return template
     
-    def refactor_business_logic(
+    def create_refactor_task(
         self,
         source_code_path: str,
         backup: bool = True
-    ) -> Dict[str, Any]:
+    ) -> Task:
         """
-        Refactor Java business logic for Camel 4 compatibility.
+        Create a task for refactoring Java business logic for Camel 4 compatibility.
         
         Args:
             source_code_path: Path to the source code directory
             backup: Whether to create backups of original files
             
         Returns:
-            Dictionary with refactoring results
+            CrewAI Task for service refactoring
         """
-        # Analyze the codebase first
-        analysis = analyze_java_files(source_code_path)
+        # Optionally analyze the codebase first
+        try:
+            analysis = analyze_java_files(source_code_path)
+            file_count = analysis.get('camel_file_count', 'unknown')
+        except Exception:
+            file_count = 'unknown'
         
-        if analysis['status'] == 'Failure':
-            return analysis
-        
-        # Create refactoring task
-        refactor_task = Task(
+        return Task(
             description=f"""
             Refactor Java business logic for Camel 4 compatibility:
             1. Analyze Java files in: {source_code_path}
@@ -164,19 +164,12 @@ public class {class_name} implements Processor {{
             6. Fix imports for relocated classes
             7. Ensure Spring annotations are correct
             
-            Found {analysis['camel_file_count']} Camel-related files to refactor.
+            Found {file_count} Camel-related files to refactor.
             
             Make sure all business logic remains intact while updating to Camel 4 APIs.
             """,
             expected_output="A report of all refactored files with changes made",
             agent=self.agent
-        )
-        
-        # Create crew and execute
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[refactor_task],
-            verbose=True
         )
         
         try:

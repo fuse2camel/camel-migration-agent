@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from typing import Dict, Any, List
-from crewai import Agent, Task, Crew
+from crewai import Agent, Task
 from crewai.tools import tool
 from pathlib import Path
 import glob
@@ -26,6 +26,7 @@ from config.llm_config import get_llm
 class DSLConversionAgent:
     """
     Agent responsible for converting Camel routes from XML/old Java DSL to modern Camel 4 Java DSL
+    Only creates agents and tasks, does not execute crews
     """
     
     def __init__(self):
@@ -123,15 +124,15 @@ class DSLConversionAgent:
         result = analyze_java_files(directory_path)
         return json.dumps(result, indent=2)
     
-    def convert_routes(
+    def create_conversion_task(
         self,
         source_code_path: str,
         source_files: List[str] = None,
         output_dir: str = None,
         package_name: str = "com.example.routes.migrated"
-    ) -> Dict[str, Any]:
+    ) -> Task:
         """
-        Convert Camel routes from XML/old Java DSL to modern Camel 4 Java DSL.
+        Create a task for converting Camel routes from XML/old Java DSL to modern Camel 4 Java DSL.
         
         Args:
             source_code_path: Path to the source code directory
@@ -140,7 +141,7 @@ class DSLConversionAgent:
             package_name: Package name for generated Java classes
             
         Returns:
-            Dictionary with conversion results
+            CrewAI Task for route conversion
         """
         if output_dir is None:
             output_dir = os.path.join(source_code_path, "src", "main", "java")
@@ -149,8 +150,7 @@ class DSLConversionAgent:
         if source_files is None:
             source_files = self._find_route_files(source_code_path)
         
-        # Create conversion task
-        conversion_task = Task(
+        return Task(
             description=f"""
             Convert Camel routes to modern Camel 4 Java DSL:
             1. Analyze the source directory: {source_code_path}
@@ -167,51 +167,6 @@ class DSLConversionAgent:
             expected_output="A report of all converted routes with file paths",
             agent=self.agent
         )
-        
-        # Create crew and execute
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[conversion_task],
-            verbose=True
-        )
-        
-        try:
-            # Execute the conversion
-            result = crew.kickoff()
-            
-            # Perform actual conversions
-            converted_files = []
-            conversion_map = {}
-            
-            for source_file in source_files:
-                if source_file.endswith('.xml'):
-                    conversion_result = create_route_builder_from_xml(
-                        source_file,
-                        output_dir,
-                        package_name
-                    )
-                    
-                    if conversion_result['status'] == 'Success':
-                        converted_files.append(conversion_result['output_file'])
-                        conversion_map[source_file] = conversion_result['output_file']
-            
-            return {
-                "status": "Success",
-                "source_directory": source_code_path,
-                "output_directory": output_dir,
-                "source_files": source_files,
-                "converted_files": converted_files,
-                "conversion_map": conversion_map,
-                "file_count": len(converted_files),
-                "message": f"Successfully converted {len(converted_files)} route files to Camel 4 Java DSL"
-            }
-            
-        except Exception as e:
-            return {
-                "status": "Failure",
-                "error": str(e),
-                "message": f"Failed to convert routes: {str(e)}"
-            }
     
     def _find_route_files(self, directory: str) -> List[str]:
         """

@@ -7,7 +7,7 @@ import os
 import sys
 import time
 from typing import Dict, Any, Optional
-from crewai import Agent, Task, Crew
+from crewai import Agent, Task
 from crewai.tools import tool
 from pathlib import Path
 
@@ -174,23 +174,22 @@ class TestAgent:
             "camel_info": camel_info[:10]  # First 10 Camel-related lines
         })
     
-    def validate_migration(
+    def create_test_task(
         self,
         project_root_path: str,
         run_full_tests: bool = True
-    ) -> Dict[str, Any]:
+    ) -> Task:
         """
-        Perform comprehensive validation of the migrated application.
+        Create a task for comprehensive validation of the migrated application.
         
         Args:
             project_root_path: Root directory of the migrated project
             run_full_tests: Whether to run full test suite
             
         Returns:
-            Dictionary with validation results
+            CrewAI Task for validation
         """
-        # Create validation task
-        validation_task = Task(
+        return Task(
             description=f"""
             Validate the migrated Camel 4 application:
             1. Compile the project at: {project_root_path}
@@ -204,13 +203,6 @@ class TestAgent:
             """,
             expected_output="A comprehensive validation report with test results",
             agent=self.agent
-        )
-        
-        # Create crew and execute
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[validation_task],
-            verbose=True
         )
         
         try:

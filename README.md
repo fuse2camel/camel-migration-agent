@@ -7,6 +7,15 @@ Local, multi-agent scaffold using **LangGraph** with a dashboard to visualize ph
 cd project_root
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# Create .env file with required environment variables:
+cat > .env << EOF
+MODEL_API_KEY=your_api_key_here
+MODEL_NAME=gpt-4
+MODEL_BASE_URL=https://api.openai.com/v1
+MODEL_TEMPERATURE=0.7
+EOF
+
 python -m tasks.run_coordinator --source-path /path/to/your/repo --branch feature/fuse2camel --port 8000
 # Dashboard opens and stays up at http://127.0.0.1:8000/ (Ctrl+C to stop)
 ```
@@ -31,7 +40,9 @@ python -m tasks.task_1 --source-path /path/to/your/repo --branch feature/fuse2ca
 4. Flow diagram colors: **green** (done), **blinking yellow** (in progress), **light gray** (not started).
 
 ## Troubleshooting
+- **Environment validation failed** → Create `.env` file with required variables: MODEL_API_KEY, MODEL_NAME, MODEL_BASE_URL, MODEL_TEMPERATURE
 - **ModuleNotFoundError: 'agents'** → run with `python -m ...` from `project_root`, or `export PYTHONPATH=.`
+- **ImportError: cannot import name 'git_agent'** → Fixed - ensure you have the latest version with the git_agent function
 - **No events in GUI** → ensure the runner started the GUI and `EVENT_HTTP_ENDPOINT` is correct.
 - **Port in use** → use `--port 8080`.
 

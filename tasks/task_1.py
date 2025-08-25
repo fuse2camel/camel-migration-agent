@@ -1,6 +1,15 @@
 from __future__ import annotations
 import argparse, json, logging, sys, time, os
 from typing import Dict, Any, List, TypedDict
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config.env_validation import validate_environment
 from langgraph.graph import StateGraph, END
 from agents.coordinator_agent import coordinator
 from agents.git_agent import git_agent
@@ -51,6 +60,11 @@ def parse_args(argv: list[str]):
     p.add_argument("--json", action="store_true")
     return p.parse_args(argv)
 def main(argv: list[str]) -> int:
+    # Validate environment variables first
+    print("🔍 Validating environment...")
+    validate_environment()
+    print("✅ Environment validation passed!\n")
+    
     args = parse_args(argv); logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     app = build_graph()
     init: State = {"source_path": args.source_path, "branch_name": args.branch, "tasks_completed": [], "artifacts": {}}

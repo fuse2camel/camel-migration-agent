@@ -39,14 +39,20 @@ Comprehensive test cases for all agents and workflow components:
 - 7 CrewAI agent tests
 - 5 end-to-end tests
 
-### 7. **Main Execution Script**
+### 7. **Environment Management**
+- **Environment Validation**: `config/env_validation.py` validates required environment variables
+- **Automatic .env Loading**: Both main execution scripts load environment variables automatically
+- **Clear Error Messages**: Missing or invalid environment variables display helpful error messages
+- **Required Variables**: MODEL_API_KEY, MODEL_NAME, MODEL_BASE_URL, MODEL_TEMPERATURE
+
+### 8. **Main Execution Script**
 Updated `main.py` with:
 - LangGraph workflow integration for full migrations
 - Individual agent testing with temporary crews
 - Checkpointing support for resumable workflows
 - Backward compatibility for testing
 
-### 8. **Documentation**
+### 9. **Documentation**
 - README.md with quick start
 - IMPLEMENTATION_SUMMARY.md (this file)
 - Example files for testing
@@ -73,9 +79,11 @@ python main.py --repo <your-repo-url> --branch <branch-name> --workspace <local-
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure API keys
-cp .env.example .env
-# Edit .env with your OpenAI client compatible API key
+# Configure API keys - Create .env file with required variables:
+# MODEL_API_KEY=your_api_key_here
+# MODEL_NAME=gpt-4  # or qwen-plus-latest for Alibaba DashScope
+# MODEL_BASE_URL=https://api.openai.com/v1  # or https://dashscope.aliyuncs.com/compatible-mode/v1
+# MODEL_TEMPERATURE=0.7
 ```
 
 2. **Validate Environment**:

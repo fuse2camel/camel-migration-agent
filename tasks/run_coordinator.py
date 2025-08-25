@@ -1,5 +1,14 @@
 from __future__ import annotations
 import argparse, json, os, sys, time, threading, webbrowser
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config.env_validation import validate_environment
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Coordinator runner: start GUI then run Phase 1–3")
     p.add_argument("--source-path", required=True, help="Local path to the Git repository")
@@ -28,6 +37,11 @@ def _start_gui_in_thread(port: int):
         time.sleep(0.1)
     raise RuntimeError("GUI server failed to start")
 def main(argv: list[str]) -> int:
+    # Validate environment variables first
+    print("🔍 Validating environment...")
+    validate_environment()
+    print("✅ Environment validation passed!\n")
+    
     args = parse_args(argv)
     os.environ["EVENT_HTTP_ENDPOINT"] = f"http://127.0.0.1:{args.port}/event"
     if not _gui_is_up(args.port):

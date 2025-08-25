@@ -221,3 +221,63 @@ class GitAgent:
                 "status": "error",
                 "message": str(e)
             }
+
+
+def git_agent(state):
+    """
+    Git agent function for LangGraph workflow compatibility.
+    
+    Args:
+        state: Current workflow state
+        
+    Returns:
+        Updated state with git operations completed
+    """
+    from typing import Dict, Any, List
+    
+    source_path = state.get("source_path", "").strip()
+    branch_name = state.get("branch_name", "feature/fuse2camel")
+    
+    if not source_path:
+        return {"error": "source_path is required for git operations"}
+    
+    try:
+        # Initialize git agent
+        agent = GitAgent()
+        
+        # Check if source path exists and is a git repository
+        if not os.path.exists(source_path):
+            return {"error": f"Source path does not exist: {source_path}"}
+        
+        if not os.path.exists(os.path.join(source_path, ".git")):
+            return {"error": f"Source path is not a git repository: {source_path}"}
+        
+        # Get repository status
+        repo_status = agent.get_repository_status(source_path)
+        
+        # Create and switch to migration branch if it doesn't exist
+        from tools.git_tools import create_branch
+        branch_result = create_branch(source_path, branch_name)
+        
+        tasks_completed = list(state.get("tasks_completed", []))
+        tasks_completed.extend([
+            "Git agent initialized",
+            f"Repository validated at: {source_path}",
+            f"Branch '{branch_name}' ready for migration"
+        ])
+        
+        artifacts = dict(state.get("artifacts", {}))
+        artifacts.update({
+            "git_repo_path": source_path,
+            "migration_branch": branch_name,
+            "repository_status": repo_status,
+            "branch_creation": branch_result
+        })
+        
+        return {
+            "tasks_completed": tasks_completed,
+            "artifacts": artifacts
+        }
+        
+    except Exception as e:
+        return {"error": f"Git agent failed: {str(e)}"}

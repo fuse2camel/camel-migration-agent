@@ -112,6 +112,54 @@ def create_branch(
         }
 
 
+def switch_branch(
+    repo_path: str,
+    branch_name: str
+) -> Dict[str, Any]:
+    """
+    Switch to an existing branch in a repository.
+    
+    Args:
+        repo_path: Path to the local repository
+        branch_name: Name of the branch to switch to
+        
+    Returns:
+        Dictionary with operation status and details
+    """
+    try:
+        repo = git.Repo(repo_path)
+        
+        # Check if branch exists
+        if branch_name not in [b.name for b in repo.branches]:
+            return {
+                "status": "Failure",
+                "error": f"Branch {branch_name} does not exist",
+                "message": f"Branch {branch_name} not found in the repository"
+            }
+        
+        # Switch to branch
+        repo.git.checkout(branch_name)
+        
+        return {
+            "status": "Success",
+            "branch_name": branch_name,
+            "current_branch": repo.active_branch.name,
+            "message": f"Successfully switched to branch {branch_name}"
+        }
+    except git.exc.GitCommandError as e:
+        return {
+            "status": "Failure",
+            "error": str(e),
+            "message": f"Failed to switch branch: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status": "Failure",
+            "error": str(e),
+            "message": f"Unexpected error: {str(e)}"
+        }
+
+
 def commit_changes(
     repo_path: str,
     commit_message: str,

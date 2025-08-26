@@ -34,10 +34,12 @@ python -m tasks.task_1 --source-path /path/to/your/repo --branch feature/fuse2ca
 - Adjust how long a phase stays **blinking yellow** using the dashboard control. This persists to `artifacts/gui_settings.json` and the runner honors it for each phase.
 
 ## Features
-1. GUI stays running until you stop it (Ctrl+C).
-2. Interactive branch decision via GUI if branch already exists: **create-new**, **override**, or **ignore**.
-3. Automatic PDF report saved in your source repo (`migration-report-<timestamp>.pdf`).
-4. Flow diagram colors: **green** (done), **blinking yellow** (in progress), **light gray** (not started).
+1. **Enhanced Flow Visualization**: Interactive flow diagram with phase descriptions and real-time status updates
+2. **JDK Management**: Automatic JDK 21 detection and installation from Adoptium with GUI path selection
+3. GUI stays running until you stop it (Ctrl+C) - dashboard remains accessible after completion
+4. Interactive branch decision via GUI if branch already exists: **create-new**, **override**, or **ignore**
+5. Automatic PDF report saved in your source repo (`migration-report-<timestamp>.pdf`)
+6. Flow diagram colors: **green** (done), **blinking yellow** (in progress), **light gray** (not started)
 
 ## Troubleshooting
 - **Environment validation failed** → Create `.env` file with required variables: MODEL_API_KEY, MODEL_NAME, MODEL_BASE_URL, MODEL_TEMPERATURE
@@ -47,7 +49,10 @@ python -m tasks.task_1 --source-path /path/to/your/repo --branch feature/fuse2ca
 - **Port in use** → use `--port 8080`.
 
 
-## JDK 21 (Red Hat) flow
-- The Git agent checks the local Java version. If it's missing or < 21, you’ll get a GUI prompt.
-- Choose **Provide Red Hat URL** (paste a direct `.tar.gz` or `.zip` URL after signing in on Red Hat’s site) or **Provide local archive** (path on disk).
-- The agent extracts to `./artifacts/jdk21/` and writes `./artifacts/activate_java.sh`. `source artifacts/activate_java.sh` to set `JAVA_HOME` and update your `PATH` in the current shell.
+## JDK 21 Automatic Installation
+- **JDK Agent** automatically checks if Java 21+ is available on your system
+- If not found, it downloads Eclipse Temurin JDK 21 from Adoptium.net (open source)
+- **GUI Integration**: Set custom installation path via the dashboard (defaults to `./artifacts/jdk21/`)
+- Supports **Linux**, **macOS**, and **Windows** with automatic OS/architecture detection
+- Creates `./artifacts/activate_java.sh` script to set `JAVA_HOME` and update `PATH`
+- **Usage**: `source artifacts/activate_java.sh` to activate the JDK in your current shell

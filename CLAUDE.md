@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-RouteForge is a multi-agent system for migrating Apache Camel 2 Spring Boot applications to Apache Camel 4. It uses CrewAI agents orchestrated by LangGraph workflows with a web-based GUI dashboard.
+**Red Hat Camel Migration Agent** is a comprehensive multi-agent system for migrating Fuse 6/7 applications to Red Hat build of Apache Camel 4.10 with Spring Boot 3.x compatibility. It uses CrewAI agents orchestrated by LangGraph workflows with a real-time web-based GUI dashboard for enterprise-grade migration operations.
 
 ## Development Commands
 
@@ -66,23 +66,23 @@ python main.py --repo <repo-url> --branch <branch-name> --workspace <local-path>
 ## Architecture Overview
 
 ### Multi-Agent System
-- **CrewAI Agents**: 7 specialized agents handle different migration aspects (config_agent.py, git_agent.py, dependency_agent.py, dsl_conversion_agent.py, service_refactor_agent.py, test_agent.py, containerization_agent.py)
+- **CrewAI Agents**: 8 specialized agents handle different migration aspects (config_agent.py, jdk_agent.py, git_agent.py, dependency_agent.py, dsl_conversion_agent.py, service_refactor_agent.py, test_agent.py, containerization_agent.py)
 - **LangGraph Orchestration**: Workflow management with state tracking, conditional routing, and checkpointing (orchestration/langgraph_workflow.py)
 - **Coordinator**: Simple state management for GUI integration (agents/coordinator_agent.py)
 
-### Workflow Phases
-1. **coordinator**: Initial setup and validation
-2. **git_agent**: Repository cloning and branch management
-3. **jdk_agent**: JDK 21 installation if needed
-4. **rewrite_agent**: Code transformation (dependencies, DSL conversion, service refactoring)
-5. **tests_agent**: Migration validation
-6. **qa_agent**: Quality assurance
-7. **commit_agent**: Git operations
-8. **reporter**: Final report generation
+### Migration Workflow Phases (Red Hat Camel 4.10)
+1. **coordinator**: Initial setup and validation for Red Hat enterprise migration
+2. **jdk_agent**: JDK 21 detection and automatic installation from Adoptium with GUI integration
+3. **git_agent**: Repository validation and branch management with conflict resolution
+4. **dependency_agent**: Maven POM migration to Red Hat Camel 4.10 BOM and dependencies
+5. **dsl_conversion_agent**: XML Spring routes to Red Hat Camel 4.10 Java DSL conversion
+6. **service_refactor_agent**: Java code refactoring for Red Hat Camel 4.10 APIs (Exchange, Processor)
+7. **reporter**: Migration report generation with Red Hat enterprise compliance
 
 ### Key Components
 - **Environment Validation**: Automatic validation of required environment variables (config/env_validation.py)
-- **GUI Dashboard**: Real-time workflow visualization (gui/server.py, gui/web/index.html)
+- **JDK Management**: Automatic JDK 21 detection and installation from Adoptium (agents/jdk_agent.py)
+- **GUI Dashboard**: Real-time workflow visualization with JDK path selection (gui/server.py, gui/web/index.html)
 - **Tools Layer**: Utility functions for Git, Maven, Docker operations (tools/)
 - **Configuration**: Environment-specific settings (config/)
 - **Prompts**: Agent instructions in separate text files (prompts/)
@@ -93,12 +93,25 @@ python main.py --repo <repo-url> --branch <branch-name> --workspace <local-path>
 - GUI settings persistence in artifacts/gui_settings.json
 - Flow configuration in config/flow.json
 
-### Migration Process
-The system converts:
-- XML routes to Java DSL
-- Camel 2 processors to Camel 4 syntax
-- Maven POM dependencies
-- Generates Docker/Kubernetes artifacts
+### Red Hat Camel 4.10 Migration Process
+The system provides enterprise-grade migration from Fuse 6/7 to Red Hat build of Apache Camel 4.10:
+
+**Maven Dependencies:**
+- Updates parent POM to Red Hat Camel Spring Boot BOM (com.redhat.camel.springboot:camel-spring-boot-bom:4.10.0.redhat-00001)
+- Adds Red Hat Maven repositories (https://maven.repository.redhat.com/ga/)
+- Maps legacy dependencies: camel-http4→camel-http, camel-jetty9→camel-jetty, camel-rabbitmq→camel-spring-rabbitmq
+
+**Code Transformation:**
+- XML Spring routes to Red Hat Camel 4.10 Java DSL with @Component annotations
+- Exchange API migration: getIn()/getOut() → getMessage() for Red Hat enterprise patterns
+- Processor implementations updated for Red Hat Camel 4.10 compatibility
+- Import updates: org.apache.camel.impl.* → org.apache.camel.support.*
+
+**Enterprise Features:**
+- Spring Boot 3.x integration with Red Hat certified components
+- Enterprise security and monitoring pattern application
+- Red Hat support compliance and documentation
+- GUI-based workflow monitoring with real-time updates
 
 ### Testing Strategy
 - System verification (tests/verify_system.py)
@@ -120,12 +133,15 @@ The system converts:
 ## Development Notes
 
 - **Environment Validation**: System validates all required .env variables on startup
+- **JDK Management**: Automatic JDK 21 detection/installation from Adoptium with GUI path selection
 - **Import Fix**: git_agent function added to resolve LangGraph import issues  
+- **Enhanced GUI**: Flow diagram with phase descriptions and real-time status updates
 - All agents create tasks without executing crews directly
 - LangGraph handles workflow orchestration and state management
 - Checkpointing enables resumable long-running migrations
-- GUI provides interactive branch decision making
-- JDK 21 installation handled automatically via Red Hat downloads
+- GUI provides interactive branch decision making and JDK installation path setting
+- JDK 21 installation handled automatically from Eclipse Temurin (Adoptium)
 - Migration reports saved as PDF in source repository
 - System requires OpenAI-compatible API endpoint for LLM operations
 - Clear error messages for missing or invalid configuration
+- Dashboard remains accessible after workflow completion

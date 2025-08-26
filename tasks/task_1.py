@@ -12,7 +12,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.env_validation import validate_environment
 from langgraph.graph import StateGraph, END
 from agents.coordinator_agent import coordinator
+from agents.jdk_agent import jdk_agent
 from agents.git_agent import git_agent
+from agents.dependency_agent import dependency_agent
+from agents.dsl_conversion_agent import dsl_conversion_agent
+from agents.service_refactor_agent import service_refactor_agent
 from tools.event_logger import logger
 from config.settings import DEFAULT_BRANCH_NAME
 class State(TypedDict, total=False):
@@ -46,13 +50,30 @@ def reporter(state: State) -> State:
     ok = "error" not in state or not state.get("error"); return {"ok": ok}
 def build_graph():
     g = StateGraph(State)
-    g.add_node("coordinator", _timed(coordinator, "coordinator"))
-    g.add_node("git_agent",  _timed(git_agent,  "git_agent"))
-    g.add_node("reporter",   _timed(reporter,   "reporter"))
-    g.set_entry_point("coordinator"); g.add_edge("coordinator", "git_agent")
-    def route_after_git(state: State): return "reporter"
-    g.add_conditional_edges("git_agent", route_after_git, {"reporter": "reporter"})
-    g.add_edge("reporter", END); return g.compile()
+    g.add_node("coordinator",        _timed(coordinator,           "coordinator"))
+    g.add_node("jdk_agent",         _timed(jdk_agent,            "jdk_agent"))
+    g.add_node("git_agent",         _timed(git_agent,            "git_agent"))
+    g.add_node("dependency_agent",  _timed(dependency_agent,     "dependency_agent"))
+    g.add_node("dsl_conversion_agent", _timed(dsl_conversion_agent, "dsl_conversion_agent"))
+    g.add_node("service_refactor_agent", _timed(service_refactor_agent, "service_refactor_agent"))
+    g.add_node("reporter",          _timed(reporter,             "reporter"))
+    
+    g.set_entry_point("coordinator")
+    g.add_edge("coordinator", "jdk_agent")
+    g.add_edge("jdk_agent", "git_agent")
+    g.add_edge("git_agent", "dependency_agent")
+    g.add_edge("dependency_agent", "dsl_conversion_agent")
+    g.add_edge("dsl_conversion_agent", "service_refactor_agent")
+    
+    def route_after_refactor(state: State): 
+        # Check if there were any errors in the migration process
+        if "error" in state:
+            return "reporter"
+        return "reporter"
+    
+    g.add_conditional_edges("service_refactor_agent", route_after_refactor, {"reporter": "reporter"})
+    g.add_edge("reporter", END)
+    return g.compile()
 def parse_args(argv: list[str]):
     p = argparse.ArgumentParser(description="Phase 1–3 Orchestrator (LangGraph)")
     p.add_argument("--source-path", required=True)

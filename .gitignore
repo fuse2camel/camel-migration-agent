@@ -6,7 +6,8 @@ __pycache__/
 # C extensions
 *.so
 
-.history
+.history/
+artifacts/jdk21
 # Distribution / packaging
 .Python
 build/

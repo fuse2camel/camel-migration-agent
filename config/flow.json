@@ -1,12 +1,11 @@
 {
   "phases": [
     "coordinator",
+    "jdk_agent", 
     "git_agent",
-    "jdk_agent",
-    "rewrite_agent",
-    "tests_agent",
-    "qa_agent",
-    "commit_agent",
+    "dependency_agent",
+    "dsl_conversion_agent",
+    "service_refactor_agent",
     "reporter"
   ]
 }

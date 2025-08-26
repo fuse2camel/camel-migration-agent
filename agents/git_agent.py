@@ -255,15 +255,92 @@ def git_agent(state):
         # Get repository status
         repo_status = agent.get_repository_status(source_path)
         
-        # Create and switch to migration branch if it doesn't exist
+        # Handle branch creation/switching with conflict resolution
         from tools.git_tools import create_branch
+        import requests
+        import uuid
+        
         branch_result = create_branch(source_path, branch_name)
+        branch_action_taken = ""
+        
+        # If branch already exists, prompt user via GUI
+        if branch_result.get("status") == "Failure" and "already exists" in branch_result.get("error", ""):
+            try:
+                # Create prompt for user decision
+                prompt_id = str(uuid.uuid4())
+                prompt_payload = {
+                    "id": prompt_id,
+                    "title": "Branch Conflict Resolution",
+                    "text": f"Branch '{branch_name}' already exists in the repository. What would you like to do?",
+                    "options": ["override", "create-new", "ignore"],
+                    "default": "override",
+                    "payload": {"branch": branch_name, "repo_path": source_path}
+                }
+                
+                # Send prompt to GUI
+                response = requests.post("http://127.0.0.1:8000/create_prompt", json=prompt_payload)
+                if response.status_code == 200:
+                    # Wait for user decision (with timeout)
+                    import time
+                    max_wait = 300  # 5 minutes timeout
+                    wait_time = 0
+                    
+                    while wait_time < max_wait:
+                        decision_response = requests.get(f"http://127.0.0.1:8000/decision/{prompt_id}")
+                        if decision_response.status_code == 200:
+                            decision_data = decision_response.json()
+                            if decision_data.get("status") == "resolved":
+                                choice = decision_data.get("choice", "override")
+                                
+                                if choice == "create-new":
+                                    new_branch_name = decision_data.get("new_branch_name", f"{branch_name}-new")
+                                    branch_result = create_branch(source_path, new_branch_name)
+                                    branch_name = new_branch_name
+                                    branch_action_taken = f"Created new branch: {new_branch_name}"
+                                    branch_result = {"status": "Success", "message": branch_action_taken}
+                                elif choice == "override":
+                                    # Force switch to existing branch
+                                    from tools.git_tools import switch_branch
+                                    switch_result = switch_branch(source_path, branch_name)
+                                    branch_result = {"status": "Success", "message": f"Switched to existing branch: {branch_name}"}
+                                    branch_action_taken = f"Switched to existing branch: {branch_name}"
+                                else:  # ignore
+                                    from tools.git_tools import switch_branch
+                                    switch_result = switch_branch(source_path, branch_name)
+                                    branch_result = {"status": "Success", "message": f"Using existing branch: {branch_name}"}
+                                    branch_action_taken = f"Using existing branch: {branch_name} (ignored conflict)"
+                                
+                                # Clean up the prompt after decision
+                                try:
+                                    requests.delete(f"http://127.0.0.1:8000/prompt/{prompt_id}")
+                                except:
+                                    pass
+                                break
+                        
+                        time.sleep(2)
+                        wait_time += 2
+                    
+                    if wait_time >= max_wait:
+                        # Default to override if no response
+                        from tools.git_tools import switch_branch
+                        switch_result = switch_branch(source_path, branch_name)
+                        branch_result = {"status": "Success", "message": f"Switched to existing branch: {branch_name} (timeout default)"}
+                        branch_action_taken = f"Switched to existing branch: {branch_name} (timeout default)"
+                        
+            except Exception as gui_error:
+                print(f"GUI prompt failed: {gui_error}")
+                # Fallback to switching to existing branch
+                from tools.git_tools import switch_branch
+                switch_result = switch_branch(source_path, branch_name)
+                branch_result = {"status": "Success", "message": f"Switched to existing branch: {branch_name} (GUI fallback)"}
+                branch_action_taken = f"Switched to existing branch: {branch_name} (GUI fallback)"
         
         tasks_completed = list(state.get("tasks_completed", []))
         tasks_completed.extend([
             "Git agent initialized",
             f"Repository validated at: {source_path}",
-            f"Branch '{branch_name}' ready for migration"
+            f"Branch '{branch_name}' ready for migration",
+            branch_action_taken if branch_action_taken else "Branch operation completed"
         ])
         
         artifacts = dict(state.get("artifacts", {}))
@@ -271,7 +348,8 @@ def git_agent(state):
             "git_repo_path": source_path,
             "migration_branch": branch_name,
             "repository_status": repo_status,
-            "branch_creation": branch_result
+            "branch_creation": branch_result,
+            "branch_action": branch_action_taken
         })
         
         return {

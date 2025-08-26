@@ -189,3 +189,161 @@ class DependencyAgent:
             "camel-kafka": "camel-kafka",
             "camel-activemq": "camel-jms"
         }
+
+
+def dependency_agent(state):
+    """
+    Dependency agent function for LangGraph workflow compatibility.
+    Updates Maven dependencies from Fuse6/7 to Red Hat build of Camel 4.10.
+    
+    Args:
+        state: Current workflow state
+        
+    Returns:
+        Updated state with dependency migration results
+    """
+    try:
+        # Get git repository path from previous git_agent
+        git_repo_path = state.get("artifacts", {}).get("git_repo_path")
+        if not git_repo_path:
+            return {"error": "Git repository path not found from git_agent"}
+        
+        # Initialize dependency agent
+        agent = DependencyAgent()
+        
+        # Find POM files in the repository
+        import os
+        pom_files = []
+        for root, dirs, files in os.walk(git_repo_path):
+            for file in files:
+                if file == "pom.xml":
+                    pom_files.append(os.path.join(root, file))
+        
+        if not pom_files:
+            return {"error": "No pom.xml files found in the repository"}
+        
+        tasks_completed = list(state.get("tasks_completed", []))
+        artifacts = dict(state.get("artifacts", {}))
+        
+        # Update each POM file
+        updated_poms = []
+        for pom_file in pom_files:
+            try:
+                # Read current POM content
+                with open(pom_file, 'r') as f:
+                    pom_content = f.read()
+                
+                # Apply Red Hat Camel 4.10 dependency updates
+                updated_content = update_camel_dependencies_to_redhat_4_10(pom_content)
+                
+                # Write updated content
+                if updated_content != pom_content:
+                    with open(pom_file, 'w') as f:
+                        f.write(updated_content)
+                    updated_poms.append(pom_file)
+                    tasks_completed.append(f"Updated dependencies in: {os.path.relpath(pom_file, git_repo_path)}")
+                
+            except Exception as e:
+                tasks_completed.append(f"Error updating {os.path.relpath(pom_file, git_repo_path)}: {str(e)}")
+        
+        if updated_poms:
+            tasks_completed.append(f"Successfully updated {len(updated_poms)} POM files for Red Hat Camel 4.10")
+        else:
+            tasks_completed.append("No dependency updates needed")
+        
+        artifacts.update({
+            "dependency_migration": {
+                "pom_files_found": len(pom_files),
+                "pom_files_updated": len(updated_poms),
+                "updated_files": updated_poms
+            }
+        })
+        
+        return {
+            "tasks_completed": tasks_completed,
+            "artifacts": artifacts
+        }
+        
+    except Exception as e:
+        return {"error": f"Dependency agent failed: {str(e)}"}
+
+
+def update_camel_dependencies_to_redhat_4_10(pom_content: str) -> str:
+    """
+    Update POM content from Fuse6/7 dependencies to Red Hat build of Camel 4.10
+    Based on Red Hat documentation: https://docs.redhat.com/en/documentation/red_hat_build_of_apache_camel/4.10
+    """
+    import re
+    
+    updated_content = pom_content
+    
+    # Update parent POM to Red Hat Camel Spring Boot BOM
+    parent_pattern = r'<parent>\s*<groupId>org\.apache\.camel\.springboot</groupId>\s*<artifactId>camel-spring-boot-bom</artifactId>\s*<version>[^<]+</version>\s*</parent>'
+    redhat_parent = '''<parent>
+        <groupId>com.redhat.camel.springboot</groupId>
+        <artifactId>camel-spring-boot-bom</artifactId>
+        <version>4.10.0.redhat-00001</version>
+        <relativePath/>
+    </parent>'''
+    
+    if re.search(parent_pattern, updated_content, re.MULTILINE):
+        updated_content = re.sub(parent_pattern, redhat_parent, updated_content, flags=re.MULTILINE)
+    
+    # Update dependency management section
+    bom_pattern = r'<dependencyManagement>.*?</dependencyManagement>'
+    redhat_bom = '''<dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.redhat.camel.springboot</groupId>
+                <artifactId>camel-spring-boot-bom</artifactId>
+                <version>4.10.0.redhat-00001</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>'''
+    
+    if re.search(bom_pattern, updated_content, re.MULTILINE | re.DOTALL):
+        updated_content = re.sub(bom_pattern, redhat_bom, updated_content, flags=re.MULTILINE | re.DOTALL)
+    
+    # Update specific Camel dependencies to Red Hat versions
+    dependency_mappings = {
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-core</artifactId>': 
+            '<groupId>org.apache.camel</groupId>\n            <artifactId>camel-core</artifactId>',
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-http4</artifactId>': 
+            '<groupId>org.apache.camel</groupId>\n            <artifactId>camel-http</artifactId>',
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-jetty9</artifactId>': 
+            '<groupId>org.apache.camel</groupId>\n            <artifactId>camel-jetty</artifactId>',
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-rabbitmq</artifactId>': 
+            '<groupId>org.apache.camel</groupId>\n            <artifactId>camel-spring-rabbitmq</artifactId>'
+    }
+    
+    for old_pattern, new_dependency in dependency_mappings.items():
+        updated_content = re.sub(old_pattern, new_dependency, updated_content, flags=re.MULTILINE)
+    
+    # Update Camel version properties
+    version_pattern = r'<camel\.version>[^<]+</camel\.version>'
+    if re.search(version_pattern, updated_content):
+        updated_content = re.sub(version_pattern, '<camel.version>4.10.0.redhat-00001</camel.version>', updated_content)
+    
+    # Add Red Hat repositories if not present
+    if '<repositories>' not in updated_content:
+        repo_section = '''
+    <repositories>
+        <repository>
+            <id>redhat-ga</id>
+            <name>Red Hat GA Repository</name>
+            <url>https://maven.repository.redhat.com/ga/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>'''
+        
+        # Insert before </project>
+        updated_content = updated_content.replace('</project>', repo_section + '\n</project>')
+    
+    return updated_content

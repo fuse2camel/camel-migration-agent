@@ -1,8 +1,19 @@
 from fastapi import FastAPI, Body
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import asyncio, json, time, os
 app = FastAPI(title="Coordinator Dashboard")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 EVENTS = []; SUBS = set(); PROMPTS = {}; DECISIONS = {}
 @app.post("/event")
 async def event(e: dict):
@@ -81,4 +92,7 @@ async def post_settings(payload: dict = Body(...)):
         except Exception: dead.append(q)
     for q in dead: SUBS.discard(q)
     return {"ok": True}
-app.mount("/", StaticFiles(directory="gui/web", html=True), name="web")
+# Get the directory of this file to find the web directory
+import os
+web_dir = os.path.join(os.path.dirname(__file__), "web")
+app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")

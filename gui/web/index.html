@@ -17,7 +17,7 @@ th, td { border-bottom: 1px solid #333; padding: 8px; text-align:left; }
 #flow svg { width: 100%; height: auto; }
 button { cursor: pointer; }
 </style>
-<script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script> mermaid.initialize({ startOnLoad: false, theme: 'dark' }); </script>
 </head><body>
 <h1>Coordinator Dashboard</h1>
@@ -32,6 +32,17 @@ button { cursor: pointer; }
     <div class="mono">
       Yellow hold (sec): <input id="yellow-hold" type="number" min="0" max="10" step="0.5" value="0" style="width:6rem;">
       <button id="apply-settings">Apply</button>
+    </div>
+  </div>
+
+  <div class="card" style="grid-column:1/-1;display:flex;align-items:center;gap:12px;justify-content:space-between;">
+    <div>
+      <strong>JDK Installation</strong>
+      <span class="mono" id="jdk-status">Not checked</span>
+    </div>
+    <div class="mono">
+      Install Path: <input id="jdk-path" type="text" placeholder="./artifacts/jdk21" style="width:20rem;padding:4px;border:1px solid #333;background:#111;color:#eee;border-radius:4px;">
+      <button id="set-jdk-path">Set Path</button>
     </div>
   </div>
 
@@ -72,29 +83,75 @@ function fmtTs(ts){ try { const d=new Date(ts*1000); return d.toLocaleTimeString
 function fmtMs(ms){ if(!ms) return ''; if(ms<1000) return `${ms} ms`; return `${(ms/1000).toFixed(2)} s`; }
 
 function renderFlow() {
-  let graph = "flowchart LR\n";
+  let graph = "flowchart TD\n";
+  
+  // Phase descriptions for better labels
+  const phaseLabels = {
+    "coordinator": "Coordinator\\n(Setup & Validation)",
+    "jdk_agent": "JDK Agent\\n(Java 21 Setup)",
+    "git_agent": "Git Agent\\n(Repository Management)",
+    "dependency_agent": "Dependency Agent\\n(Maven POM Updates)",
+    "dsl_conversion_agent": "DSL Converter\\n(XML → Java DSL)",
+    "service_refactor_agent": "Service Refactor\\n(Camel 2→4 Code Update)",
+    "rewrite_agent": "Code Rewriter\\n(Camel 2 → 4 Migration)",
+    "tests_agent": "Test Agent\\n(Validation & Testing)",
+    "qa_agent": "QA Agent\\n(Quality Assurance)",
+    "commit_agent": "Commit Agent\\n(Git Operations)",
+    "reporter": "Reporter\\n(Generate Reports)"
+  };
+  
   for (const p of phases) {
     const info = phaseInfo[p] || {status:"pending", duration:0};
-    let color = "#64748b";
-    if (info.status==="success") color = "#16a34a";
-    else if (info.status==="start") color = "#eab308";
-    else if (info.status==="error") color = "#ef4444";
-    const label = `${p}\\n${fmtMs(info.duration)}`;
-    graph += `${p}([\"${label}\"]):::${p}\n`;
-    graph += `classDef ${p} fill:${color},stroke:#333,stroke-width:1px,color:#000;\n`
-  }
-  for (let i=0;i<phases.length-1;i++){ graph += `${phases[i]}-->${phases[i+1]}\n`; }
-  mermaid.render(`m${Date.now()}`, graph).then(({svg})=>{
-    const container = document.getElementById("flow");
-    container.innerHTML = svg;
-    for (const p of phases) {
-      const info = phaseInfo[p] || {status:"pending"};
-      const el = container.querySelector(`#${p}`) || container.querySelector(`[id^='${p}']`);
-      if (!el) continue;
-      if (info.status==="start") el.classList.add("blinky"); else el.classList.remove("blinky");
-      if (info.status==="pending") el.classList.add("gray"); else el.classList.remove("gray");
+    let color = "#64748b", strokeColor = "#333", textColor = "#fff";
+    
+    if (info.status==="success") { 
+      color = "#16a34a"; strokeColor = "#15803d"; textColor = "#fff";
+    } else if (info.status==="start") { 
+      color = "#eab308"; strokeColor = "#ca8a04"; textColor = "#000";
+    } else if (info.status==="error") { 
+      color = "#ef4444"; strokeColor = "#dc2626"; textColor = "#fff";
     }
-  });
+    
+    const label = phaseLabels[p] || `${p}\\n${fmtMs(info.duration)}`;
+    const durationLabel = info.duration ? `\\n(${fmtMs(info.duration)})` : "";
+    graph += `${p}([\"${label}${durationLabel}\"]):::${p}\n`;
+    graph += `classDef ${p} fill:${color},stroke:${strokeColor},stroke-width:2px,color:${textColor};\n`
+  }
+  
+  // Connect phases with arrows
+  for (let i=0;i<phases.length-1;i++){ 
+    graph += `${phases[i]}-->${phases[i+1]}\n`; 
+  }
+  
+  try {
+    mermaid.render(`m${Date.now()}`, graph).then(({svg})=>{
+      const container = document.getElementById("flow");
+      if (container) {
+        container.innerHTML = svg;
+        
+        // Add blinking animation for active phases after mermaid renders
+        for (const p of phases) {
+          const info = phaseInfo[p] || {status:"pending"};
+          const el = container.querySelector(`#${p}`) || container.querySelector(`[id^='${p}']`);
+          if (!el) continue;
+          if (info.status==="start") el.classList.add("blinky"); else el.classList.remove("blinky");
+          if (info.status==="pending") el.classList.add("gray"); else el.classList.remove("gray");
+        }
+      }
+    }).catch(error => {
+      console.error('Mermaid render error:', error);
+      const container = document.getElementById("flow");
+      if (container) {
+        container.innerHTML = '<p style="color: #ef4444;">Flow diagram failed to render</p>';
+      }
+    });
+  } catch (error) {
+    console.error('Mermaid error:', error);
+    const container = document.getElementById("flow");
+    if (container) {
+      container.innerHTML = '<p style="color: #ef4444;">Flow diagram not available</p>';
+    }
+  }
 }
 
 function renderSummary() {
@@ -153,6 +210,14 @@ function handlePrompt(e){
   modal.style.display = "block";
 }
 
+function updateJDKStatus(status, message) {
+  const jdkStatusEl = document.getElementById('jdk-status');
+  if (jdkStatusEl) {
+    jdkStatusEl.textContent = message || status;
+    jdkStatusEl.className = `mono ${status === 'success' ? 'badge ok' : status === 'error' ? 'badge err' : ''}`;
+  }
+}
+
 function handle(e){
   if(e.type === 'prompt'){ handlePrompt(e); return; }
   if(e.phase && !phaseInfo[e.phase]) phaseInfo[e.phase] = {status:'pending', duration:0};
@@ -161,6 +226,17 @@ function handle(e){
     info.status = e.status || 'success';
     if (e.duration_ms) info.duration = e.duration_ms;
     info.lastMessage = e.message || '';
+    
+    // Update JDK status if this is jdk_agent phase
+    if (e.phase === 'jdk_agent') {
+      if (e.status === 'success') {
+        updateJDKStatus('success', 'JDK 21 Ready');
+      } else if (e.status === 'error') {
+        updateJDKStatus('error', 'JDK Installation Failed');
+      } else if (e.status === 'start') {
+        updateJDKStatus('pending', 'Checking JDK...');
+      }
+    }
   }
 }
 
@@ -173,17 +249,41 @@ async function bootstrap() {
     if (typeof js.demo_yellow_secs === 'number') inp.value = js.demo_yellow_secs;
   } catch(e) {}
 
+  console.log('Loading initial events...');
   const res = await fetch('/events'); const list = await res.json();
+  console.log(`Loaded ${list.length} initial events`);
   for (const e of list) { if(e.type==='prompt') handlePrompt(e); else { handle(e); addRow(e); } }
   renderFlow(); renderSummary();
+  console.log('Connecting to SSE...');
   const es = new EventSource('/sse');
-  es.onmessage = (ev)=>{ const e = JSON.parse(ev.data); if(e.type==='prompt'){ handlePrompt(e); } else { handle(e); addRow(e); renderFlow(); renderSummary(); } };
+  es.onopen = () => console.log('SSE connection opened');
+  es.onerror = (err) => console.error('SSE error:', err);
+  es.onmessage = (ev)=>{ 
+    console.log('SSE message:', ev.data.substring(0, 100) + '...');
+    const e = JSON.parse(ev.data); 
+    if(e.type==='prompt'){ handlePrompt(e); } else { handle(e); addRow(e); renderFlow(); renderSummary(); } 
+  };
 
   document.getElementById('apply-settings').onclick = async ()=>{
     const v = parseFloat(document.getElementById('yellow-hold').value||'0')||0;
     await fetch('/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({demo_yellow_secs: v})});
     const s = document.getElementById('settings-status'); s.textContent = `Saved (${v}s)`; setTimeout(()=> s.textContent='', 1500);
   };
+
+  document.getElementById('set-jdk-path').onclick = async ()=>{
+    const path = document.getElementById('jdk-path').value || './artifacts/jdk21';
+    await fetch('/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({jdk_install_path: path})});
+    updateJDKStatus('pending', `Path set: ${path}`);
+    setTimeout(()=> updateJDKStatus('pending', 'Not checked'), 2000);
+  };
+
+  // Load JDK path from settings
+  try {
+    const settings = await fetch('/settings'); const js = await settings.json();
+    if (js.jdk_install_path) {
+      document.getElementById('jdk-path').value = js.jdk_install_path;
+    }
+  } catch(e) {}
 }
 bootstrap();
 </script>

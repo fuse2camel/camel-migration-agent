@@ -317,3 +317,208 @@ public class {class_name} implements Processor {{
                 "error": str(e),
                 "message": f"Failed to create processor template: {str(e)}"
             }
+
+
+def service_refactor_agent(state):
+    """
+    Service refactor agent function for LangGraph workflow compatibility.
+    Refactors Java business logic from Camel 2 to Camel 4 APIs.
+    
+    Args:
+        state: Current workflow state
+        
+    Returns:
+        Updated state with service refactoring results
+    """
+    try:
+        # Get git repository path from previous agents
+        git_repo_path = state.get("artifacts", {}).get("git_repo_path")
+        if not git_repo_path:
+            return {"error": "Git repository path not found from previous agents"}
+        
+        # Initialize service refactor agent
+        agent = ServiceRefactorAgent()
+        
+        tasks_completed = list(state.get("tasks_completed", []))
+        artifacts = dict(state.get("artifacts", {}))
+        
+        # Find Java files that need refactoring
+        java_files = []
+        for root, dirs, files in os.walk(git_repo_path):
+            for file in files:
+                if file.endswith('.java'):
+                    full_path = os.path.join(root, file)
+                    # Check if file contains Camel-related code
+                    try:
+                        with open(full_path, 'r') as f:
+                            content = f.read()
+                            if any(keyword in content for keyword in ['import org.apache.camel', 'Exchange', 'Processor', 'RouteBuilder']):
+                                java_files.append(full_path)
+                    except Exception:
+                        continue
+        
+        if not java_files:
+            tasks_completed.append("No Java files with Camel code found to refactor")
+            artifacts.update({
+                "service_refactoring": {
+                    "java_files_found": 0,
+                    "files_refactored": 0,
+                    "message": "No Camel Java files found"
+                }
+            })
+            return {
+                "tasks_completed": tasks_completed,
+                "artifacts": artifacts
+            }
+        
+        refactored_files = []
+        refactoring_changes = []
+        
+        for java_file in java_files:
+            try:
+                # Read Java file
+                with open(java_file, 'r') as f:
+                    original_content = f.read()
+                
+                # Apply Camel 4 refactoring
+                refactored_content = refactor_java_for_camel4(original_content)
+                
+                if refactored_content != original_content:
+                    # Create backup
+                    backup_path = f"{java_file}.backup"
+                    with open(backup_path, 'w') as f:
+                        f.write(original_content)
+                    
+                    # Write refactored content
+                    with open(java_file, 'w') as f:
+                        f.write(refactored_content)
+                    
+                    refactored_files.append(java_file)
+                    
+                    # Analyze changes
+                    changes = analyze_refactoring_changes(original_content, refactored_content)
+                    refactoring_changes.append({
+                        'file': java_file,
+                        'changes': changes
+                    })
+                    
+                    tasks_completed.append(f"Refactored {os.path.relpath(java_file, git_repo_path)} for Camel 4 compatibility")
+                
+            except Exception as e:
+                tasks_completed.append(f"Error refactoring {os.path.relpath(java_file, git_repo_path)}: {str(e)}")
+        
+        if refactored_files:
+            tasks_completed.append(f"Successfully refactored {len(refactored_files)} Java files for Red Hat Camel 4.10")
+        
+        artifacts.update({
+            "service_refactoring": {
+                "java_files_found": len(java_files),
+                "files_refactored": len(refactored_files),
+                "refactored_files": refactored_files,
+                "refactoring_changes": refactoring_changes,
+                "backup_created": True
+            }
+        })
+        
+        return {
+            "tasks_completed": tasks_completed,
+            "artifacts": artifacts
+        }
+        
+    except Exception as e:
+        return {"error": f"Service refactor agent failed: {str(e)}"}
+
+
+def refactor_java_for_camel4(java_content: str) -> str:
+    """
+    Refactor Java code from Camel 2/3 to Camel 4 APIs
+    Based on Red Hat Camel 4.10 migration guidelines
+    """
+    import re
+    
+    refactored_content = java_content
+    
+    # Update Exchange API calls (most important change)
+    # getIn() -> getMessage()
+    refactored_content = re.sub(r'\.getIn\(\)', '.getMessage()', refactored_content)
+    
+    # getOut() -> getMessage() (in most cases)
+    refactored_content = re.sub(r'\.getOut\(\)', '.getMessage()', refactored_content)
+    
+    # Update imports for relocated classes
+    import_mappings = {
+        'org.apache.camel.impl.DefaultCamelContext': 'org.apache.camel.CamelContext',
+        'org.apache.camel.impl.SimpleRegistry': 'org.apache.camel.support.SimpleRegistry',
+        'org.apache.camel.util.CamelContextHelper': 'org.apache.camel.support.CamelContextHelper',
+        'org.apache.camel.impl.DefaultMessage': 'org.apache.camel.support.DefaultMessage',
+        'org.apache.camel.impl.DefaultExchange': 'org.apache.camel.support.DefaultExchange'
+    }
+    
+    for old_import, new_import in import_mappings.items():
+        refactored_content = refactored_content.replace(f'import {old_import}', f'import {new_import}')
+    
+    # Update component URIs that changed in Camel 4
+    uri_mappings = {
+        'http4:': 'http:',
+        'jetty9:': 'jetty:',
+        'netty4:': 'netty:'
+    }
+    
+    for old_uri, new_uri in uri_mappings.items():
+        refactored_content = refactored_content.replace(f'"{old_uri}', f'"{new_uri}')
+        refactored_content = refactored_content.replace(f"'{old_uri}", f"'{new_uri}")
+    
+    # Update deprecated method calls
+    deprecated_mappings = {
+        '.setHeader(': '.setHeader(',  # Most header methods remain the same
+        '.getContext().getRegistry()': '.getCamelContext().getRegistry()',
+    }
+    
+    for old_method, new_method in deprecated_mappings.items():
+        refactored_content = refactored_content.replace(old_method, new_method)
+    
+    # Add Spring Boot annotations for modern Camel 4
+    if 'extends RouteBuilder' in refactored_content and '@Component' not in refactored_content:
+        # Add @Component annotation to RouteBuilder classes
+        refactored_content = re.sub(
+            r'(public class \w+RouteBuilder? extends RouteBuilder)',
+            r'@Component\n\1',
+            refactored_content
+        )
+        
+        # Add import for @Component if not present
+        if 'import org.springframework.stereotype.Component' not in refactored_content:
+            if 'import org.apache.camel' in refactored_content:
+                refactored_content = refactored_content.replace(
+                    'import org.apache.camel',
+                    'import org.springframework.stereotype.Component;\nimport org.apache.camel'
+                )
+    
+    return refactored_content
+
+
+def analyze_refactoring_changes(original: str, refactored: str) -> list:
+    """
+    Analyze what changes were made during refactoring
+    """
+    changes = []
+    
+    if '.getIn()' in original and '.getMessage()' in refactored:
+        changes.append("Updated Exchange.getIn() to getMessage() for Camel 4 compatibility")
+    
+    if '.getOut()' in original and '.getMessage()' in refactored:
+        changes.append("Updated Exchange.getOut() to getMessage() for Camel 4 compatibility")
+    
+    if 'http4:' in original and 'http:' in refactored:
+        changes.append("Updated HTTP component URI from http4: to http:")
+    
+    if 'jetty9:' in original and 'jetty:' in refactored:
+        changes.append("Updated Jetty component URI from jetty9: to jetty:")
+    
+    if '@Component' in refactored and '@Component' not in original:
+        changes.append("Added @Component annotation for Spring Boot integration")
+    
+    if 'org.apache.camel.impl.' in original and 'org.apache.camel.support.' in refactored:
+        changes.append("Updated imports for relocated Camel support classes")
+    
+    return changes

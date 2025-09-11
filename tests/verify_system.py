@@ -6,6 +6,9 @@ Verifies that all components of the Camel Migration Agent are working
 import os
 import sys
 
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Disable display warnings
 os.environ.pop('DISPLAY', None)
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
@@ -30,7 +33,7 @@ def verify_imports():
         print("  ✅ All agent imports OK")
         
         # Workflow imports
-        from orchestration.workflow import CamelMigrationWorkflow
+        from orchestration.langgraph_workflow import CamelMigrationLangGraphWorkflow
         print("  ✅ Workflow imports OK")
         
         return True
@@ -75,9 +78,9 @@ def verify_workflow():
     print("\nVerifying workflow...")
     
     try:
-        from orchestration.workflow import CamelMigrationWorkflow
+        from orchestration.langgraph_workflow import CamelMigrationLangGraphWorkflow
         
-        workflow = CamelMigrationWorkflow()
+        workflow = CamelMigrationLangGraphWorkflow()
         print("  ✅ Workflow created successfully")
         return True
     except Exception as e:

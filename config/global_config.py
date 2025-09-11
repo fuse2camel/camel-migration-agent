@@ -40,8 +40,9 @@ def validate_config():
     """Validate that critical environment variables are set"""
     errors = []
     
+    # For vLLM or local deployments, API key can be "none" or any non-empty value
     if not MODEL_API_KEY:
-        errors.append("MODEL_API_KEY is not set in .env file")
+        errors.append("MODEL_API_KEY is not set in .env file (use 'none' for vLLM)")
     
     if errors:
         print("[Config] ❌ Configuration errors:")

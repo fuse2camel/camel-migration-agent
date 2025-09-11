@@ -17,6 +17,32 @@ from tools.system_tools import validate_environment
 from config.llm_config import get_llm
 
 
+# Create tool function outside the class to avoid self parameter issues
+@tool("Validate Environment")
+def validate_environment_tool(requirements_json: str) -> str:
+    """
+    Validate the system environment against requirements.
+    
+    Args:
+        requirements_json: JSON string with tool requirements
+        
+    Returns:
+        JSON string with validation results
+    """
+    try:
+        requirements = json.loads(requirements_json)
+    except (json.JSONDecodeError, TypeError):
+        requirements = {
+            "java": "17",
+            "maven": "3.8.0",
+            "git": "Any",
+            "docker": "Any"
+        }
+    
+    result = validate_environment(requirements)
+    return json.dumps(result, indent=2)
+
+
 class ConfigAgent:
     """
     Agent responsible for validating the local system's environment
@@ -47,32 +73,8 @@ class ConfigAgent:
             verbose=True,
             allow_delegation=False,
             llm=self.llm,
-            tools=[self.validate_environment_tool]
+            tools=[validate_environment_tool]  # Use the standalone tool function
         )
-    
-    @tool("Validate Environment")
-    def validate_environment_tool(self, requirements_json: str) -> str:
-        """
-        Validate the system environment against requirements.
-        
-        Args:
-            requirements_json: JSON string with tool requirements
-            
-        Returns:
-            JSON string with validation results
-        """
-        try:
-            requirements = json.loads(requirements_json)
-        except json.JSONDecodeError:
-            requirements = {
-                "java": "17",
-                "maven": "3.8.0",
-                "git": "Any",
-                "docker": "Any"
-            }
-        
-        result = validate_environment(requirements)
-        return json.dumps(result, indent=2)
     
     def create_validation_task(self, requirements_config: Dict[str, str] = None) -> Task:
         """

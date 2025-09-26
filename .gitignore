@@ -209,4 +209,8 @@ marimo/_lsp/
 __marimo__/
 .idea
 
-.claude
+knowledge/vector_db/model_cache
+*.pkl
+*.index
+*.faiss
+.DS_Store

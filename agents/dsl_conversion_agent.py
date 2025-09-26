@@ -22,6 +22,25 @@ from tools.code_tools import (
 )
 from config.llm_config import get_llm
 
+# Try to import knowledge tools, but don't fail if unavailable
+try:
+    from tools.knowledge_tools import (
+        query_knowledge_tool,
+        dsl_conversion_help_tool,
+        component_migration_tool,
+        ensure_knowledge_base_ready
+    )
+    KNOWLEDGE_TOOLS_AVAILABLE = True
+except ImportError as e:
+    print(f"Note: Knowledge tools not available ({e}). DSL agent will work without them.")
+    KNOWLEDGE_TOOLS_AVAILABLE = False
+    # Define dummy functions to avoid NameError
+    def ensure_knowledge_base_ready():
+        return False
+    query_knowledge_tool = None
+    dsl_conversion_help_tool = None
+    component_migration_tool = None
+
 
 class DSLConversionAgent:
     """
@@ -32,6 +51,14 @@ class DSLConversionAgent:
     def __init__(self):
         """Initialize the DSL Conversion Agent with LLM and tools"""
         self.llm = get_llm()
+        # Try to initialize knowledge base, but don't fail if it's not available
+        try:
+            self.kb_available = ensure_knowledge_base_ready()
+            if not self.kb_available:
+                print("Note: Knowledge base not fully available. Using fallback patterns.")
+        except Exception as e:
+            print(f"Note: Knowledge base initialization failed ({e}). Using fallback patterns.")
+            self.kb_available = False
         self.agent = self._create_agent()
         
     def _create_agent(self) -> Agent:
@@ -46,6 +73,27 @@ class DSLConversionAgent:
         with open(prompt_path, 'r') as f:
             system_prompt = f.read()
         
+        # Build tools list
+        tools = [
+            self.parse_xml_tool,
+            self.convert_to_java_tool,
+            self.create_route_builder_tool,
+            self.analyze_files_tool
+        ]
+
+        # Add knowledge tools if available
+        if self.kb_available and KNOWLEDGE_TOOLS_AVAILABLE:
+            try:
+                kb_tools = [
+                    t for t in [query_knowledge_tool, dsl_conversion_help_tool, component_migration_tool]
+                    if t is not None
+                ]
+                if kb_tools:
+                    tools.extend(kb_tools)
+                    print(f"Added {len(kb_tools)} knowledge tools to DSL agent")
+            except Exception as e:
+                print(f"Note: Could not add knowledge tools: {e}")
+
         return Agent(
             role='Core Camel Translator',
             goal='Convert legacy Camel routing definitions to modern Camel 4 Java DSL',
@@ -53,12 +101,7 @@ class DSLConversionAgent:
             verbose=True,
             allow_delegation=False,
             llm=self.llm,
-            tools=[
-                self.parse_xml_tool,
-                self.convert_to_java_tool,
-                self.create_route_builder_tool,
-                self.analyze_files_tool
-            ]
+            tools=tools
         )
     
     @tool("Parse XML Routes")
@@ -275,8 +318,14 @@ def dsl_conversion_agent(state):
                 with open(route_file, 'r') as f:
                     xml_content = f.read()
                 
-                # Convert to Java DSL
-                java_dsl = agent.convert_xml_to_java_dsl(xml_content, route_file)
+                # Optional: Get guidance from knowledge base for this specific route
+                # from tools.knowledge_tools import get_dsl_conversion_guidance
+                # guidance = get_dsl_conversion_guidance(xml_content[:500], "route")
+
+                # Convert to Java DSL with knowledge base context
+                parsed_routes = parse_xml_routes(route_file)
+                if parsed_routes['status'] == 'Success':
+                    java_dsl = convert_xml_to_java_dsl(parsed_routes, "com.example.routes")
                 
                 # Create Java route class file
                 route_name = os.path.basename(route_file).replace('.xml', '').replace('-', '').replace('_', '')

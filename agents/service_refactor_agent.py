@@ -323,10 +323,10 @@ def service_refactor_agent(state):
     """
     Service refactor agent function for LangGraph workflow compatibility.
     Refactors Java business logic from Camel 2 to Camel 4 APIs.
-    
+
     Args:
         state: Current workflow state
-        
+
     Returns:
         Updated state with service refactoring results
     """
@@ -335,27 +335,28 @@ def service_refactor_agent(state):
         git_repo_path = state.get("artifacts", {}).get("git_repo_path")
         if not git_repo_path:
             return {"error": "Git repository path not found from previous agents"}
-        
+
         # Initialize service refactor agent
         agent = ServiceRefactorAgent()
-        
+
         tasks_completed = list(state.get("tasks_completed", []))
         artifacts = dict(state.get("artifacts", {}))
-        
-        # Find Java files that need refactoring
-        java_files = []
+
+        # Solution 3: Find Java files with smart filtering
+        from tools.code_tools import needs_java_migration, batch_files
+
+        all_java_files = []
         for root, dirs, files in os.walk(git_repo_path):
             for file in files:
                 if file.endswith('.java'):
-                    full_path = os.path.join(root, file)
-                    # Check if file contains Camel-related code
-                    try:
-                        with open(full_path, 'r') as f:
-                            content = f.read()
-                            if any(keyword in content for keyword in ['import org.apache.camel', 'Exchange', 'Processor', 'RouteBuilder']):
-                                java_files.append(full_path)
-                    except Exception:
-                        continue
+                    all_java_files.append(os.path.join(root, file))
+
+        # Filter: only process files that need migration
+        java_files = [f for f in all_java_files if needs_java_migration(f)]
+
+        if len(all_java_files) > len(java_files):
+            skipped = len(all_java_files) - len(java_files)
+            tasks_completed.append(f"Skipped {skipped} Java files that don't need migration")
         
         if not java_files:
             tasks_completed.append("No Java files with Camel code found to refactor")
@@ -370,53 +371,88 @@ def service_refactor_agent(state):
                 "tasks_completed": tasks_completed,
                 "artifacts": artifacts
             }
-        
+
+        # Solution 1: Batch processing for large file sets
+        BATCH_SIZE = 10  # Process 10 files per batch
+        file_batches = batch_files(java_files, BATCH_SIZE)
+
         refactored_files = []
         refactoring_changes = []
-        
-        for java_file in java_files:
-            try:
-                # Read Java file
-                with open(java_file, 'r') as f:
-                    original_content = f.read()
-                
-                # Apply Camel 4 refactoring
-                refactored_content = refactor_java_for_camel4(original_content)
-                
-                if refactored_content != original_content:
-                    # Create backup
-                    backup_path = f"{java_file}.backup"
-                    with open(backup_path, 'w') as f:
-                        f.write(original_content)
-                    
-                    # Write refactored content
-                    with open(java_file, 'w') as f:
-                        f.write(refactored_content)
-                    
-                    refactored_files.append(java_file)
-                    
-                    # Analyze changes
-                    changes = analyze_refactoring_changes(original_content, refactored_content)
-                    refactoring_changes.append({
-                        'file': java_file,
-                        'changes': changes
-                    })
-                    
-                    tasks_completed.append(f"Refactored {os.path.relpath(java_file, git_repo_path)} for Camel 4 compatibility")
-                
-            except Exception as e:
-                tasks_completed.append(f"Error refactoring {os.path.relpath(java_file, git_repo_path)}: {str(e)}")
+        already_converted_files = []
+
+        print(f"Processing {len(java_files)} files in {len(file_batches)} batches...")
+
+        for batch_idx, batch in enumerate(file_batches):
+            print(f"Processing batch {batch_idx + 1}/{len(file_batches)} ({len(batch)} files)...")
+
+            for java_file in batch:
+                try:
+                    # Read Java file
+                    with open(java_file, 'r') as f:
+                        original_content = f.read()
+
+                    # Check if file has Camel 4 patterns
+                    is_already_camel4 = is_file_already_camel4(original_content)
+
+                    # Apply Camel 4 refactoring
+                    refactored_content = refactor_java_for_camel4(original_content)
+
+                    if refactored_content != original_content:
+                        # File HAS changes - refactor it
+                        backup_path = f"{java_file}.backup"
+                        with open(backup_path, 'w') as f:
+                            f.write(original_content)
+
+                        # Write refactored content
+                        with open(java_file, 'w') as f:
+                            f.write(refactored_content)
+
+                        refactored_files.append(java_file)
+
+                        # Analyze changes
+                        changes = analyze_refactoring_changes(original_content, refactored_content)
+                        refactoring_changes.append({
+                            'file': java_file,
+                            'changes': changes
+                        })
+
+                        tasks_completed.append(f"Refactored {os.path.relpath(java_file, git_repo_path)} for Camel 4 compatibility")
+                    else:
+                        # File doesn't need changes
+                        backup_path = f"{java_file}.backup"
+                        has_old_backup = os.path.exists(backup_path)
+
+                        if has_old_backup and is_already_camel4:
+                            already_converted_files.append(java_file)
+                            tasks_completed.append(f"Skipped {os.path.relpath(java_file, git_repo_path)} (already converted in previous run)")
+                        elif is_already_camel4:
+                            already_converted_files.append(java_file)
+                            tasks_completed.append(f"Skipped {os.path.relpath(java_file, git_repo_path)} (already Camel 4 compatible)")
+                        else:
+                            tasks_completed.append(f"Skipped {os.path.relpath(java_file, git_repo_path)} (no Exchange API usage detected)")
+
+                except Exception as e:
+                    tasks_completed.append(f"Error refactoring {os.path.relpath(java_file, git_repo_path)}: {str(e)}")
         
         if refactored_files:
             tasks_completed.append(f"Successfully refactored {len(refactored_files)} Java files for Red Hat Camel 4.10")
-        
+
+        # Add summary message about already converted files
+        if already_converted_files and not refactored_files:
+            tasks_completed.append(f"All {len(already_converted_files)} Java files already converted to Camel 4 (from previous migration run)")
+        elif already_converted_files:
+            tasks_completed.append(f"Found {len(already_converted_files)} files already converted from previous run")
+
         artifacts.update({
             "service_refactoring": {
                 "java_files_found": len(java_files),
                 "files_refactored": len(refactored_files),
+                "files_already_converted": len(already_converted_files),
                 "refactored_files": refactored_files,
+                "already_converted_files": already_converted_files,
                 "refactoring_changes": refactoring_changes,
-                "backup_created": True
+                "backup_created": True,
+                "status": "already_converted" if already_converted_files and not refactored_files else "success"
             }
         })
         
@@ -495,6 +531,36 @@ def refactor_java_for_camel4(java_content: str) -> str:
                 )
     
     return refactored_content
+
+
+def is_file_already_camel4(java_content: str) -> bool:
+    """
+    Check if a Java file already uses Camel 4 APIs.
+
+    Args:
+        java_content: Java file content
+
+    Returns:
+        True if file appears to already be using Camel 4 patterns
+    """
+    # Check for Camel 4 patterns
+    has_get_message = '.getMessage()' in java_content
+
+    # Check that it DOESN'T have old Camel 2/3 patterns
+    has_get_in = '.getIn()' in java_content
+    has_get_out = '.getOut()' in java_content
+    has_old_uris = any(uri in java_content for uri in ['http4:', 'jetty9:', 'netty4:'])
+    has_old_imports = 'org.apache.camel.impl.' in java_content
+
+    # If it has getMessage() and doesn't have old patterns, it's likely Camel 4
+    if has_get_message and not (has_get_in or has_get_out):
+        return True
+
+    # If it has no Exchange API usage at all but is a RouteBuilder, assume it's fine
+    if 'extends RouteBuilder' in java_content and not (has_get_in or has_get_out):
+        return True
+
+    return False
 
 
 def analyze_refactoring_changes(original: str, refactored: str) -> list:

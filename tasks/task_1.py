@@ -79,14 +79,21 @@ def parse_args(argv: list[str]):
     p.add_argument("--source-path", required=True)
     p.add_argument("--branch", default=DEFAULT_BRANCH_NAME)
     p.add_argument("--json", action="store_true")
+    p.add_argument("--gui-port", type=int, help="Enable GUI updates by sending events to specified port (e.g., 8000)")
     return p.parse_args(argv)
 def main(argv: list[str]) -> int:
     # Validate environment variables first
     print("🔍 Validating environment...")
     validate_environment()
     print("✅ Environment validation passed!\n")
-    
+
     args = parse_args(argv); logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+
+    # Enable GUI updates if port specified
+    if args.gui_port:
+        os.environ["EVENT_HTTP_ENDPOINT"] = f"http://127.0.0.1:{args.gui_port}/event"
+        print(f"📡 GUI updates enabled on port {args.gui_port}")
+        print(f"   Open http://127.0.0.1:{args.gui_port} to view dashboard\n")
     app = build_graph()
     init: State = {"source_path": args.source_path, "branch_name": args.branch, "tasks_completed": [], "artifacts": {}}
     final: State = app.invoke(init)

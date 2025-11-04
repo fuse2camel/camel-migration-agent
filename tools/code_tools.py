@@ -395,12 +395,12 @@ def analyze_java_files(directory_path: str) -> Dict[str, Any]:
 def create_route_builder_from_xml(xml_file_path: str, output_dir: str, package_name: str = "com.example.routes") -> Dict[str, Any]:
     """
     Create a complete RouteBuilder Java file from XML routes.
-    
+
     Args:
         xml_file_path: Path to XML file with Camel routes
         output_dir: Directory to save the generated Java file
         package_name: Package name for the generated class
-        
+
     Returns:
         Dictionary with conversion results
     """
@@ -409,27 +409,27 @@ def create_route_builder_from_xml(xml_file_path: str, output_dir: str, package_n
         parsed_routes = parse_xml_routes(xml_file_path)
         if parsed_routes['status'] == 'Failure':
             return parsed_routes
-        
+
         # Convert to Java DSL
         java_code = convert_xml_to_java_dsl(parsed_routes, package_name)
-        
+
         # Create output directory structure
         package_path = package_name.replace('.', os.sep)
         full_output_dir = os.path.join(output_dir, package_path)
         os.makedirs(full_output_dir, exist_ok=True)
-        
+
         # Generate class name from XML file name
         xml_filename = os.path.basename(xml_file_path)
         class_name = xml_filename.replace('.xml', '').replace('-', '_').title() + 'Routes'
-        
+
         # Update class name in generated code
         java_code = java_code.replace('MigratedRoutes', class_name)
-        
+
         # Save Java file
         output_file = os.path.join(full_output_dir, f'{class_name}.java')
         with open(output_file, 'w') as f:
             f.write(java_code)
-        
+
         return {
             'status': 'Success',
             'input_file': xml_file_path,
@@ -439,10 +439,171 @@ def create_route_builder_from_xml(xml_file_path: str, output_dir: str, package_n
             'route_count': parsed_routes['route_count'],
             'message': f'Successfully converted {parsed_routes["route_count"]} routes to Java DSL'
         }
-        
+
     except Exception as e:
         return {
             'status': 'Failure',
             'error': str(e),
             'message': f'Failed to create RouteBuilder: {str(e)}'
         }
+
+
+# ============================================================================
+# Solution 3 & 4: File Filtering and Metadata Extraction
+# ============================================================================
+
+def needs_java_migration(java_file_path: str) -> bool:
+    """
+    Check if a Java file needs Camel 4 migration.
+    Simple filtering to avoid processing files that don't need changes.
+    """
+    try:
+        with open(java_file_path, 'r') as f:
+            content = f.read()
+
+        # Skip if no Camel imports
+        if 'import org.apache.camel' not in content:
+            return False
+
+        # Skip if already migrated (has getMessage, no getIn/getOut)
+        has_old_api = '.getIn()' in content or '.getOut()' in content
+        has_new_api = '.getMessage()' in content
+
+        if has_new_api and not has_old_api:
+            return False  # Already Camel 4
+
+        # Needs migration if has old API or has Camel imports
+        return True
+
+    except Exception:
+        return True  # Process on error to be safe
+
+
+def needs_xml_migration(xml_file_path: str) -> bool:
+    """
+    Check if XML file contains Camel routes that need migration.
+    """
+    try:
+        with open(xml_file_path, 'r') as f:
+            content = f.read()
+
+        # Check for actual route elements (not routeContextRef which contains '<route' substring)
+        has_routes = ('<route ' in content or '<route>' in content or
+                     'camel:route ' in content or 'camel:route>' in content)
+
+        # Skip infrastructure files that only reference routes (no actual routes)
+        if not has_routes:
+            return False
+
+        return True
+
+    except Exception:
+        return True  # Process on error
+
+
+def get_java_file_metadata(java_file_path: str) -> Dict[str, Any]:
+    """
+    Extract lightweight metadata from Java file without loading full content to LLM.
+    Returns only essential information for migration decisions.
+    """
+    try:
+        with open(java_file_path, 'r') as f:
+            content = f.read()
+
+        lines = content.split('\n')
+
+        return {
+            'file_path': java_file_path,
+            'file_name': os.path.basename(java_file_path),
+            'line_count': len(lines),
+            'size_bytes': len(content),
+            'has_camel_imports': 'import org.apache.camel' in content,
+            'is_processor': 'implements Processor' in content,
+            'is_route_builder': 'extends RouteBuilder' in content,
+            'uses_old_api': '.getIn()' in content or '.getOut()' in content,
+            'uses_new_api': '.getMessage()' in content,
+            'needs_migration': needs_java_migration(java_file_path)
+        }
+
+    except Exception as e:
+        return {
+            'file_path': java_file_path,
+            'error': str(e),
+            'needs_migration': True
+        }
+
+
+def get_xml_file_metadata(xml_file_path: str) -> Dict[str, Any]:
+    """
+    Extract lightweight metadata from XML route file.
+    """
+    try:
+        parsed = parse_xml_routes(xml_file_path)
+
+        with open(xml_file_path, 'r') as f:
+            content = f.read()
+
+        return {
+            'file_path': xml_file_path,
+            'file_name': os.path.basename(xml_file_path),
+            'route_count': parsed.get('route_count', 0),
+            'size_bytes': len(content),
+            'has_routes': parsed.get('route_count', 0) > 0,
+            'needs_migration': needs_xml_migration(xml_file_path)
+        }
+
+    except Exception as e:
+        return {
+            'file_path': xml_file_path,
+            'error': str(e),
+            'needs_migration': True
+        }
+
+
+# ============================================================================
+# Solution 2: Large File Chunking
+# ============================================================================
+
+def parse_xml_routes_chunked(xml_file_path: str, max_routes_per_chunk: int = 10) -> List[Dict[str, Any]]:
+    """
+    Parse XML routes and split into chunks if file is too large.
+    Returns list of route chunks for batch processing.
+    """
+    parsed = parse_xml_routes(xml_file_path)
+
+    if parsed['status'] == 'Failure':
+        return [parsed]
+
+    routes = parsed.get('routes', [])
+    route_count = len(routes)
+
+    # If small enough, return as single chunk
+    if route_count <= max_routes_per_chunk:
+        return [parsed]
+
+    # Split into chunks
+    chunks = []
+    for i in range(0, route_count, max_routes_per_chunk):
+        chunk_routes = routes[i:i + max_routes_per_chunk]
+        chunk = {
+            'status': 'Success',
+            'file_path': xml_file_path,
+            'routes': chunk_routes,
+            'route_count': len(chunk_routes),
+            'chunk_index': i // max_routes_per_chunk,
+            'total_chunks': (route_count + max_routes_per_chunk - 1) // max_routes_per_chunk,
+            'message': f'Chunk {i // max_routes_per_chunk + 1} with {len(chunk_routes)} routes'
+        }
+        chunks.append(chunk)
+
+    return chunks
+
+
+def batch_files(file_list: List[str], batch_size: int = 5) -> List[List[str]]:
+    """
+    Simple utility to batch a list of files.
+    """
+    batches = []
+    for i in range(0, len(file_list), batch_size):
+        batches.append(file_list[i:i + batch_size])
+    return batches

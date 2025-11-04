@@ -704,70 +704,81 @@ def dependency_agent(state):
         
         # Initialize dependency agent
         agent = DependencyAgent()
-        
+
         # Find POM files in the repository
         import os
+        from tools.code_tools import batch_files
+
         pom_files = []
         for root, dirs, files in os.walk(git_repo_path):
             for file in files:
                 if file == "pom.xml":
                     pom_files.append(os.path.join(root, file))
-        
+
         if not pom_files:
             return {"error": "No pom.xml files found in the repository"}
-        
+
         tasks_completed = list(state.get("tasks_completed", []))
         artifacts = dict(state.get("artifacts", {}))
-        
+
+        # Solution 1: Batch processing for multi-module projects
+        BATCH_SIZE = 5  # Process 5 POM files per batch
+        pom_batches = batch_files(pom_files, BATCH_SIZE)
+
+        print(f"Processing {len(pom_files)} POM files in {len(pom_batches)} batches...")
+
         # Update each POM file
         updated_poms = []
-        for pom_file in pom_files:
-            try:
-                print(f"Processing POM: {pom_file}")
-                
-                # STEP 1: Apply structural transformation (bundle→jar, add Spring Boot plugin, etc.)
-                from tools.maven_tools import parse_pom_file
-                
-                # Check if this is a Fuse/OSGi bundle POM that needs structural transformation
-                pom_info = parse_pom_file(pom_file)
-                if pom_info.get("status") == "success":
-                    packaging = pom_info.get("packaging", "")
-                    if packaging == "bundle" or "maven-bundle-plugin" in str(pom_info):
-                        print(f"🔧 Applying structural transformation (OSGi bundle → Spring Boot)")
-                        # Apply the transformation logic directly
-                        import json
-                        # Apply the transformation logic by calling the internal method
-                        structural_result_str = agent._transform_pom_structure_internal(pom_file)
-                        structural_result = json.loads(structural_result_str)
-                        if structural_result.get("status") == "success":
-                            print(f"✅ Structural transformation completed")
-                            print(f"   Transformations: {', '.join(structural_result.get('transformations', []))}")
+        for batch_idx, batch in enumerate(pom_batches):
+            print(f"Processing batch {batch_idx + 1}/{len(pom_batches)} ({len(batch)} POMs)...")
+
+            for pom_file in batch:
+                try:
+                    print(f"Processing POM: {pom_file}")
+
+                    # STEP 1: Apply structural transformation (bundle→jar, add Spring Boot plugin, etc.)
+                    from tools.maven_tools import parse_pom_file
+
+                    # Check if this is a Fuse/OSGi bundle POM that needs structural transformation
+                    pom_info = parse_pom_file(pom_file)
+                    if pom_info.get("status") == "Success":
+                        packaging = pom_info.get("packaging", "")
+                        if packaging == "bundle" or "maven-bundle-plugin" in str(pom_info):
+                            print(f"🔧 Applying structural transformation (OSGi bundle → Spring Boot)")
+                            # Apply the transformation logic directly
+                            import json
+                            # Apply the transformation logic by calling the internal method
+                            structural_result_str = agent._transform_pom_structure_internal(pom_file)
+                            structural_result = json.loads(structural_result_str)
+                            if structural_result.get("status") == "success":
+                                print(f"✅ Structural transformation completed")
+                                print(f"   Transformations: {', '.join(structural_result.get('transformations', []))}")
+                            else:
+                                print(f"⚠️  Structural transformation issues: {structural_result.get('message', 'Unknown')}")
                         else:
-                            print(f"⚠️  Structural transformation issues: {structural_result.get('message', 'Unknown')}")
+                            print(f"ℹ️  POM already has proper structure, skipping structural transformation")
                     else:
-                        print(f"ℹ️  POM already has proper structure, skipping structural transformation")
-                else:
-                    print(f"⚠️  Could not parse POM for structural analysis")
-                
-                # STEP 2: Apply dependency updates
-                with open(pom_file, 'r') as f:
-                    pom_content = f.read()
-                
-                # Apply Red Hat Camel 4.10 dependency updates
-                updated_content = update_camel_dependencies_to_redhat_4_10(pom_content)
-                
-                # Write updated content
-                if updated_content != pom_content:
-                    with open(pom_file, 'w') as f:
-                        f.write(updated_content)
-                    updated_poms.append(pom_file)
-                    print(f"✅ Updated POM: {pom_file}")
-                else:
-                    print(f"ℹ️  No dependency changes needed: {pom_file}")
-                    tasks_completed.append(f"Updated dependencies in: {os.path.relpath(pom_file, git_repo_path)}")
-                
-            except Exception as e:
-                tasks_completed.append(f"Error updating {os.path.relpath(pom_file, git_repo_path)}: {str(e)}")
+                        print(f"⚠️  Could not parse POM for structural analysis")
+
+                    # STEP 2: Apply dependency updates
+                    with open(pom_file, 'r') as f:
+                        pom_content = f.read()
+
+                    # Apply Red Hat Camel 4.10 dependency updates
+                    updated_content = update_camel_dependencies_to_redhat_4_10(pom_content)
+
+                    # Write updated content
+                    if updated_content != pom_content:
+                        with open(pom_file, 'w') as f:
+                            f.write(updated_content)
+                        updated_poms.append(pom_file)
+                        print(f"✅ Updated POM: {pom_file}")
+                    else:
+                        print(f"ℹ️  No dependency changes needed: {pom_file}")
+                        tasks_completed.append(f"Updated dependencies in: {os.path.relpath(pom_file, git_repo_path)}")
+
+                except Exception as e:
+                    tasks_completed.append(f"Error updating {os.path.relpath(pom_file, git_repo_path)}: {str(e)}")
         
         if updated_poms:
             tasks_completed.append(f"Successfully updated {len(updated_poms)} POM files for Red Hat Camel 4.10")

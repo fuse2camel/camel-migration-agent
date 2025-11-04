@@ -51,6 +51,11 @@ button { cursor: pointer; }
 </div>
 
 <div class="card" style="margin-top:16px;">
+  <h2>Phase Details</h2>
+  <div id="phase-details" style="font-family:ui-monospace,monospace;font-size:13px;max-height:400px;overflow-y:auto;"></div>
+</div>
+
+<div class="card" style="margin-top:16px;">
   <h2>Events</h2>
   <table id="events"><thead>
     <tr><th>Time</th><th>Phase</th><th>Status</th><th>Duration</th><th>Message</th></tr>
@@ -164,6 +169,81 @@ function renderSummary() {
     <ul>${phases.map(p=>`<li><span class=\"mono\">${p}</span>: ${(phaseInfo[p]||{status:'pending'}).status} ${(phaseInfo[p]||{}).duration?`(${fmtMs((phaseInfo[p]||{}).duration)})`:''}</li>`).join('')}</ul>`;
 }
 
+function renderPhaseDetails() {
+  const container = document.getElementById("phase-details");
+  if (!container) return;
+
+  let html = '';
+
+  for (const phase of phases) {
+    const info = phaseInfo[phase];
+    if (!info || info.status === 'pending') continue;
+
+    const artifacts = info.artifacts;
+    if (!artifacts) continue;
+
+    html += `<div style="border-bottom:1px solid #333;padding:12px 0;"><strong style="color:#60a5fa;">${phase}</strong>`;
+
+    // Service Refactoring Details
+    if (artifacts.service_refactoring) {
+      const sr = artifacts.service_refactoring;
+      html += `<div style="margin-top:8px;">`;
+      html += `<div>Files found: <span style="color:#a78bfa;">${sr.java_files_found || 0}</span></div>`;
+      html += `<div>Files refactored: <span style="color:#34d399;">${sr.files_refactored || 0}</span></div>`;
+      html += `<div>Already converted: <span style="color:#fbbf24;">${sr.files_already_converted || 0}</span></div>`;
+
+      if (sr.refactoring_changes && sr.refactoring_changes.length > 0) {
+        html += `<div style="margin-top:8px;"><strong>Changes:</strong></div>`;
+        sr.refactoring_changes.forEach(change => {
+          const fileName = change.file.split('/').pop();
+          html += `<div style="margin-left:12px;color:#6ee7b7;">✓ ${fileName}</div>`;
+          (change.changes || []).forEach(c => {
+            html += `<div style="margin-left:24px;color:#94a3b8;font-size:12px;">• ${c}</div>`;
+          });
+        });
+      }
+
+      if (sr.already_converted_files && sr.already_converted_files.length > 0) {
+        html += `<div style="margin-top:8px;"><strong>Already Converted:</strong></div>`;
+        sr.already_converted_files.forEach(f => {
+          const fileName = f.split('/').pop();
+          html += `<div style="margin-left:12px;color:#fbbf24;">↻ ${fileName}</div>`;
+        });
+      }
+      html += `</div>`;
+    }
+
+    // DSL Conversion Details
+    if (artifacts.dsl_conversion) {
+      const dsl = artifacts.dsl_conversion;
+      html += `<div style="margin-top:8px;">`;
+      html += `<div>XML files found: <span style="color:#a78bfa;">${dsl.route_files_found || 0}</span></div>`;
+      html += `<div>Files converted: <span style="color:#34d399;">${dsl.files_converted || 0}</span></div>`;
+      if (dsl.java_files_created && dsl.java_files_created.length > 0) {
+        html += `<div style="margin-top:4px;"><strong>Generated:</strong></div>`;
+        dsl.java_files_created.forEach(f => {
+          const fileName = f.split('/').pop();
+          html += `<div style="margin-left:12px;color:#6ee7b7;">✓ ${fileName}</div>`;
+        });
+      }
+      html += `</div>`;
+    }
+
+    // Dependency Migration Details
+    if (artifacts.dependency_migration) {
+      const dep = artifacts.dependency_migration;
+      html += `<div style="margin-top:8px;">`;
+      html += `<div>POM files found: <span style="color:#a78bfa;">${dep.pom_files_found || 0}</span></div>`;
+      html += `<div>POM files updated: <span style="color:#34d399;">${dep.pom_files_updated || 0}</span></div>`;
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  container.innerHTML = html || '<div style="color:#64748b;padding:12px;">No phase details available yet...</div>';
+}
+
 function addRow(e) {
   const tr = document.createElement('tr');
   tr.innerHTML = `<td class='mono'>${fmtTs(e.ts)}</td>
@@ -220,13 +300,18 @@ function updateJDKStatus(status, message) {
 
 function handle(e){
   if(e.type === 'prompt'){ handlePrompt(e); return; }
-  if(e.phase && !phaseInfo[e.phase]) phaseInfo[e.phase] = {status:'pending', duration:0};
+  if(e.phase && !phaseInfo[e.phase]) phaseInfo[e.phase] = {status:'pending', duration:0, artifacts:null};
   if(e.phase){
     const info = phaseInfo[e.phase];
     info.status = e.status || 'success';
     if (e.duration_ms) info.duration = e.duration_ms;
     info.lastMessage = e.message || '';
-    
+
+    // Store artifacts for detailed view
+    if (e.meta && e.meta.artifacts) {
+      info.artifacts = e.meta.artifacts;
+    }
+
     // Update JDK status if this is jdk_agent phase
     if (e.phase === 'jdk_agent') {
       if (e.status === 'success') {
@@ -237,6 +322,9 @@ function handle(e){
         updateJDKStatus('pending', 'Checking JDK...');
       }
     }
+
+    // Update phase details panel
+    renderPhaseDetails();
   }
 }
 
@@ -253,15 +341,15 @@ async function bootstrap() {
   const res = await fetch('/events'); const list = await res.json();
   console.log(`Loaded ${list.length} initial events`);
   for (const e of list) { if(e.type==='prompt') handlePrompt(e); else { handle(e); addRow(e); } }
-  renderFlow(); renderSummary();
+  renderFlow(); renderSummary(); renderPhaseDetails();
   console.log('Connecting to SSE...');
   const es = new EventSource('/sse');
   es.onopen = () => console.log('SSE connection opened');
   es.onerror = (err) => console.error('SSE error:', err);
-  es.onmessage = (ev)=>{ 
+  es.onmessage = (ev)=>{
     console.log('SSE message:', ev.data.substring(0, 100) + '...');
-    const e = JSON.parse(ev.data); 
-    if(e.type==='prompt'){ handlePrompt(e); } else { handle(e); addRow(e); renderFlow(); renderSummary(); } 
+    const e = JSON.parse(ev.data);
+    if(e.type==='prompt'){ handlePrompt(e); } else { handle(e); addRow(e); renderFlow(); renderSummary(); renderPhaseDetails(); }
   };
 
   document.getElementById('apply-settings').onclick = async ()=>{

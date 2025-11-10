@@ -1,0 +1,115 @@
+{
+  "package_mappings": {
+    "javax.persistence": "jakarta.persistence",
+    "javax.validation": "jakarta.validation",
+    "javax.servlet": "jakarta.servlet",
+    "javax.servlet.http": "jakarta.servlet.http",
+    "javax.servlet.annotation": "jakarta.servlet.annotation",
+    "javax.ws.rs": "jakarta.ws.rs",
+    "javax.ws.rs.core": "jakarta.ws.rs.core",
+    "javax.ws.rs.client": "jakarta.ws.rs.client",
+    "javax.annotation": "jakarta.annotation",
+    "javax.inject": "jakarta.inject",
+    "javax.transaction": "jakarta.transaction",
+    "javax.xml.bind": "jakarta.xml.bind",
+    "javax.xml.bind.annotation": "jakarta.xml.bind.annotation",
+    "javax.xml.soap": "jakarta.xml.soap",
+    "javax.xml.ws": "jakarta.xml.ws",
+    "javax.jms": "jakarta.jms",
+    "javax.mail": "jakarta.mail",
+    "javax.ejb": "jakarta.ejb",
+    "javax.faces": "jakarta.faces",
+    "javax.enterprise": "jakarta.enterprise",
+    "javax.interceptor": "jakarta.interceptor"
+  },
+  "annotation_mappings": {
+    "@Entity": "@jakarta.persistence.Entity",
+    "@Table": "@jakarta.persistence.Table",
+    "@Id": "@jakarta.persistence.Id",
+    "@GeneratedValue": "@jakarta.persistence.GeneratedValue",
+    "@Column": "@jakarta.persistence.Column",
+    "@ManyToOne": "@jakarta.persistence.ManyToOne",
+    "@OneToMany": "@jakarta.persistence.OneToMany",
+    "@ManyToMany": "@jakarta.persistence.ManyToMany",
+    "@OneToOne": "@jakarta.persistence.OneToOne",
+    "@JoinColumn": "@jakarta.persistence.JoinColumn",
+    "@NotNull": "@jakarta.validation.constraints.NotNull",
+    "@NotEmpty": "@jakarta.validation.constraints.NotEmpty",
+    "@NotBlank": "@jakarta.validation.constraints.NotBlank",
+    "@Size": "@jakarta.validation.constraints.Size",
+    "@Min": "@jakarta.validation.constraints.Min",
+    "@Max": "@jakarta.validation.constraints.Max",
+    "@Email": "@jakarta.validation.constraints.Email",
+    "@Pattern": "@jakarta.validation.constraints.Pattern",
+    "@Valid": "@jakarta.validation.Valid",
+    "@WebServlet": "@jakarta.servlet.annotation.WebServlet",
+    "@WebFilter": "@jakarta.servlet.annotation.WebFilter",
+    "@WebListener": "@jakarta.servlet.annotation.WebListener",
+    "@Path": "@jakarta.ws.rs.Path",
+    "@GET": "@jakarta.ws.rs.GET",
+    "@POST": "@jakarta.ws.rs.POST",
+    "@PUT": "@jakarta.ws.rs.PUT",
+    "@DELETE": "@jakarta.ws.rs.DELETE",
+    "@Produces": "@jakarta.ws.rs.Produces",
+    "@Consumes": "@jakarta.ws.rs.Consumes",
+    "@PathParam": "@jakarta.ws.rs.PathParam",
+    "@QueryParam": "@jakarta.ws.rs.QueryParam",
+    "@Inject": "@jakarta.inject.Inject",
+    "@PostConstruct": "@jakarta.annotation.PostConstruct",
+    "@PreDestroy": "@jakarta.annotation.PreDestroy",
+    "@Resource": "@jakarta.annotation.Resource",
+    "@Transactional": "@jakarta.transaction.Transactional"
+  },
+  "xml_namespace_mappings": {
+    "http://xmlns.jcp.org/xml/ns/persistence": "https://jakarta.ee/xml/ns/persistence",
+    "http://xmlns.jcp.org/xml/ns/javaee": "https://jakarta.ee/xml/ns/jakartaee",
+    "http://java.sun.com/xml/ns/persistence": "https://jakarta.ee/xml/ns/persistence",
+    "http://java.sun.com/xml/ns/javaee": "https://jakarta.ee/xml/ns/jakartaee"
+  },
+  "schema_version_mappings": {
+    "persistence_2_0.xsd": "persistence_3_0.xsd",
+    "persistence_2_1.xsd": "persistence_3_0.xsd",
+    "persistence_2_2.xsd": "persistence_3_0.xsd",
+    "web-app_3_0.xsd": "web-app_5_0.xsd",
+    "web-app_3_1.xsd": "web-app_5_0.xsd",
+    "web-app_4_0.xsd": "web-app_5_0.xsd"
+  },
+  "common_patterns": [
+    {
+      "description": "JPA Entity Migration",
+      "old_pattern": "import javax.persistence.*;",
+      "new_pattern": "import jakarta.persistence.*;",
+      "confidence": 1.0
+    },
+    {
+      "description": "Bean Validation Migration",
+      "old_pattern": "import javax.validation.constraints.*;",
+      "new_pattern": "import jakarta.validation.constraints.*;",
+      "confidence": 1.0
+    },
+    {
+      "description": "Servlet API Migration",
+      "old_pattern": "import javax.servlet.*;",
+      "new_pattern": "import jakarta.servlet.*;",
+      "confidence": 1.0
+    },
+    {
+      "description": "JAX-RS Migration",
+      "old_pattern": "import javax.ws.rs.*;",
+      "new_pattern": "import jakarta.ws.rs.*;",
+      "confidence": 1.0
+    },
+    {
+      "description": "CDI Migration",
+      "old_pattern": "import javax.inject.*;",
+      "new_pattern": "import jakarta.inject.*;",
+      "confidence": 1.0
+    }
+  ],
+  "migration_notes": {
+    "persistence.xml": "Update XML namespace to https://jakarta.ee/xml/ns/persistence and schema version to 3.0",
+    "web.xml": "Update XML namespace to https://jakarta.ee/xml/ns/jakartaee and schema version to 5.0",
+    "beans.xml": "Update XML namespace to https://jakarta.ee/xml/ns/jakartaee",
+    "pom.xml_dependencies": "Update to Jakarta EE 9+ dependencies with jakarta.* groupId"
+  }
+}

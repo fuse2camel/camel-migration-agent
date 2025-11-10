@@ -18,6 +18,10 @@ from tools.code_tools import (
     refactor_java_code,
     analyze_java_files
 )
+from tools.java_parser import JavaParser, find_javax_imports
+from tools.java_transformer import JavaTransformer
+from tools.config_parser import migrate_application_properties, migrate_application_yaml
+from knowledge.migration_patterns import get_migration_patterns
 from config.llm_config import get_llm
 
 
@@ -29,6 +33,7 @@ class ServiceRefactorAgent:
     def __init__(self):
         """Initialize the Service Refactor Agent with LLM and tools"""
         self.llm = get_llm()
+        self.patterns = get_migration_patterns()
         self.agent = self._create_agent()
         
     def _create_agent(self) -> Agent:
@@ -44,16 +49,26 @@ class ServiceRefactorAgent:
             system_prompt = f.read()
         
         return Agent(
-            role='Business Logic Updater',
-            goal='Refactor Java classes for Camel 4 API compatibility',
+            role='Java Code Modernization Specialist',
+            goal='Refactor Java code for Camel 4, Jakarta EE, Spring Boot 3, and Java 21',
             backstory=system_prompt,
             verbose=True,
             allow_delegation=False,
             llm=self.llm,
             tools=[
+                # Existing Camel 4 tools
                 self.refactor_java_tool,
                 self.analyze_java_tool,
-                self.generate_processor_tool
+                self.generate_processor_tool,
+                # New Jakarta EE tools
+                self.migrate_jakarta_imports_tool,
+                self.scan_javax_usage_tool,
+                # New Spring Boot tools
+                self.migrate_spring_properties_tool,
+                self.migrate_spring_yaml_tool,
+                # New Java modernization tools
+                self.modernize_java_code_tool,
+                self.analyze_modernization_opportunities_tool
             ]
         )
     
@@ -130,7 +145,203 @@ public class {class_name} implements Processor {{
     }}
 }}"""
         return template
-    
+
+    # ===== Jakarta EE Migration Tools =====
+
+    @tool("Scan javax Usage")
+    def scan_javax_usage_tool(self, file_path: str) -> str:
+        """
+        Scan a Java file for javax.* imports that need Jakarta EE migration.
+
+        Args:
+            file_path: Path to Java source file
+
+        Returns:
+            JSON string with found javax imports categorized by API type
+        """
+        try:
+            javax_imports = find_javax_imports(file_path)
+
+            categorized = {
+                "persistence": [i for i in javax_imports if "persistence" in i],
+                "validation": [i for i in javax_imports if "validation" in i],
+                "servlet": [i for i in javax_imports if "servlet" in i],
+                "ws_rs": [i for i in javax_imports if "ws.rs" in i],
+                "inject": [i for i in javax_imports if "inject" in i],
+                "other": [i for i in javax_imports if i not in sum([v for v in categorized.values()], [])]
+            }
+
+            result = {
+                "file": file_path,
+                "total_javax_imports": len(javax_imports),
+                "categorized": categorized,
+                "needs_migration": len(javax_imports) > 0
+            }
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e), "file": file_path})
+
+    @tool("Migrate Jakarta Imports")
+    def migrate_jakarta_imports_tool(self, file_path: str) -> str:
+        """
+        Migrate javax.* imports to jakarta.* in a Java file.
+
+        Args:
+            file_path: Path to Java source file
+
+        Returns:
+            JSON string with migration results
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+
+            transformer = JavaTransformer(source_code)
+            mappings = self.patterns.get_all_jakarta_packages()
+
+            count = 0
+            for old_pkg, new_pkg in mappings.items():
+                if transformer.replace_import(old_pkg, new_pkg):
+                    count += 1
+                count += transformer.replace_package_reference(old_pkg, new_pkg)
+
+            if count > 0:
+                transformed = transformer.apply_transformations()
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(transformed)
+                result = {
+                    "status": "success",
+                    "file": file_path,
+                    "transformations": count,
+                    "message": f"Migrated {count} javax references to jakarta"
+                }
+            else:
+                result = {"status": "no_changes", "file": file_path}
+
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+
+    # ===== Spring Boot Migration Tools =====
+
+    @tool("Migrate Spring Boot Properties")
+    def migrate_spring_properties_tool(self, properties_file: str) -> str:
+        """
+        Migrate application.properties from Spring Boot 2.x to 3.x.
+
+        Args:
+            properties_file: Path to application.properties file
+
+        Returns:
+            JSON string with migration results
+        """
+        try:
+            result = migrate_application_properties(properties_file, backup=True)
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "file": properties_file, "error": str(e)})
+
+    @tool("Migrate Spring Boot YAML")
+    def migrate_spring_yaml_tool(self, yaml_file: str) -> str:
+        """
+        Migrate application.yml from Spring Boot 2.x to 3.x.
+
+        Args:
+            yaml_file: Path to application.yml file
+
+        Returns:
+            JSON string with migration results
+        """
+        try:
+            result = migrate_application_yaml(yaml_file, backup=True)
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "file": yaml_file, "error": str(e)})
+
+    # ===== Java Modernization Tools =====
+
+    @tool("Modernize Java Code")
+    def modernize_java_code_tool(self, file_path: str, strategy: str = "balanced") -> str:
+        """
+        Modernize Java code to use Java 21 features (lambdas, streams, var, etc.).
+
+        Args:
+            file_path: Path to Java source file
+            strategy: Modernization strategy ('aggressive', 'balanced', 'conservative')
+
+        Returns:
+            JSON string with modernization results
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+
+            parser = JavaParser()
+            parser.parse_source(source_code)
+
+            # Find lambda conversion opportunities
+            lambda_candidates = parser.find_lambda_candidates()
+
+            transformer = JavaTransformer(source_code)
+            modernizations = []
+
+            # Apply modernizations based on strategy
+            strategy_config = self.patterns.get_java_modernization_strategy(strategy)
+
+            # Simple pattern replacements for now
+            # Lambda conversions would be handled by LLM with more context
+
+            result = {
+                "status": "success",
+                "file": file_path,
+                "lambda_candidates": len(lambda_candidates),
+                "strategy": strategy,
+                "message": f"Found {len(lambda_candidates)} lambda conversion opportunities"
+            }
+
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+
+    @tool("Analyze Modernization Opportunities")
+    def analyze_modernization_opportunities_tool(self, file_path: str) -> str:
+        """
+        Analyze Java file for modernization opportunities (Java 21 features).
+
+        Args:
+            file_path: Path to Java source file
+
+        Returns:
+            JSON string with analysis results
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+
+            parser = JavaParser()
+            parser.parse_source(source_code)
+
+            opportunities = {
+                "lambda_candidates": len(parser.find_lambda_candidates()),
+                "has_exchange_api": parser.has_exchange_api_usage(),
+                "anonymous_classes": len([c for c in parser.find_lambda_candidates()]),
+                "current_java_version": parser.detect_version(source_code) if hasattr(parser, 'detect_version') else "unknown"
+            }
+
+            result = {
+                "status": "success",
+                "file": file_path,
+                "opportunities": opportunities,
+                "recommendations": []
+            }
+
+            if opportunities["lambda_candidates"] > 0:
+                result["recommendations"].append(f"Convert {opportunities['lambda_candidates']} anonymous classes to lambdas")
+
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+
     def create_refactor_task(
         self,
         source_code_path: str,

@@ -1,0 +1,211 @@
+{
+  "component_uri_mappings": {
+    "http4": {
+      "new_uri": "http",
+      "reason": "http4 component merged into http",
+      "migration_guide": "Replace http4: with http: in all URIs",
+      "camel_version": "4.0",
+      "confidence": 1.0
+    },
+    "jetty9": {
+      "new_uri": "jetty",
+      "reason": "jetty9 component renamed to jetty",
+      "migration_guide": "Replace jetty9: with jetty: in all URIs",
+      "camel_version": "4.0",
+      "confidence": 1.0
+    },
+    "netty4": {
+      "new_uri": "netty",
+      "reason": "netty4 component renamed to netty",
+      "migration_guide": "Replace netty4: with netty: in all URIs",
+      "camel_version": "4.0",
+      "confidence": 1.0
+    },
+    "vertx": {
+      "new_uri": "vertx",
+      "reason": "No change, but upgraded to Vert.x 4.x",
+      "migration_guide": "URI unchanged, but verify Vert.x 4.x compatibility",
+      "camel_version": "4.0",
+      "confidence": 1.0
+    }
+  },
+  "removed_components": {
+    "atmos": {
+      "alternative": "Custom component or REST API",
+      "reason": "Atmos cloud storage service deprecated",
+      "migration_strategy": "Use REST component with Atmos API"
+    },
+    "dozer": {
+      "alternative": "Bean component or custom mapper",
+      "reason": "Dozer project no longer maintained",
+      "migration_strategy": "Use MapStruct or custom transformation logic"
+    },
+    "hbase": {
+      "alternative": "Custom component with HBase client",
+      "reason": "Limited usage and maintenance burden",
+      "migration_strategy": "Use HBase Java client directly"
+    },
+    "mongodb3": {
+      "alternative": "mongodb",
+      "reason": "Merged into main mongodb component",
+      "migration_strategy": "Replace mongodb3: with mongodb:"
+    }
+  },
+  "api_changes": {
+    "exchange": {
+      "getIn": {
+        "replacement": "getMessage",
+        "description": "getIn() method replaced by getMessage()",
+        "pattern": ".getIn() -> .getMessage()",
+        "confidence": 1.0
+      },
+      "getOut": {
+        "replacement": "getMessage",
+        "description": "getOut() method replaced by getMessage()",
+        "pattern": ".getOut() -> .getMessage()",
+        "notes": "In most cases getOut() becomes getMessage(). Review carefully for producer patterns.",
+        "confidence": 0.95
+      },
+      "hasOut": {
+        "replacement": "getMessage",
+        "description": "hasOut() no longer needed",
+        "notes": "Message model simplified - always use getMessage()",
+        "confidence": 0.9
+      }
+    },
+    "processor": {
+      "old_pattern": "new Processor() { public void process(Exchange exchange) { Message in = exchange.getIn(); } }",
+      "new_pattern": "exchange -> { var message = exchange.getMessage(); }",
+      "description": "Use lambda expressions and getMessage()",
+      "confidence": 1.0
+    }
+  },
+  "eip_pattern_updates": {
+    "aggregate": {
+      "old_syntax": ".aggregate(header(\"groupId\"), new MyAggregationStrategy())",
+      "new_syntax": ".aggregate(header(\"groupId\")).aggregationStrategy(new MyAggregationStrategy())",
+      "description": "Aggregation strategy now set via fluent method",
+      "confidence": 0.9
+    },
+    "loadBalance": {
+      "old_syntax": ".loadBalance().roundRobin()",
+      "new_syntax": ".loadBalance().roundRobin()",
+      "description": "No change in basic load balancing",
+      "confidence": 1.0
+    },
+    "split": {
+      "old_syntax": ".split(body())",
+      "new_syntax": ".split(body())",
+      "description": "Split EIP unchanged",
+      "confidence": 1.0
+    },
+    "multicast": {
+      "old_syntax": ".multicast()",
+      "new_syntax": ".multicast()",
+      "description": "Multicast EIP unchanged",
+      "confidence": 1.0
+    }
+  },
+  "type_converter_changes": {
+    "description": "Type converter API updated",
+    "old_api": "context.getTypeConverter().convertTo(String.class, value)",
+    "new_api": "context.getTypeConverter().convertTo(String.class, value)",
+    "notes": "API mostly unchanged, but implementation improved"
+  },
+  "rest_dsl_updates": {
+    "description": "REST DSL enhancements",
+    "changes": [
+      "Better OpenAPI 3.0 support",
+      "Improved type validation",
+      "Enhanced error handling"
+    ],
+    "example_old": "rest(\"/api\").get(\"/users\").to(\"direct:getUsers\")",
+    "example_new": "rest(\"/api\").get(\"/users\").to(\"direct:getUsers\")",
+    "notes": "Syntax unchanged, but validation and documentation improved"
+  },
+  "dependency_updates": {
+    "camel_core": {
+      "old": "org.apache.camel:camel-core:2.x",
+      "new": "org.apache.camel:camel-core:4.10.0.redhat-00001",
+      "notes": "Use Red Hat build for enterprise support"
+    },
+    "camel_spring_boot": {
+      "old": "org.apache.camel:camel-spring-boot-starter:2.x",
+      "new": "org.apache.camel:camel-spring-boot-starter:4.10.0.redhat-00001",
+      "notes": "Spring Boot 3.x required for Camel 4.10"
+    }
+  },
+  "route_builder_patterns": {
+    "old_pattern": {
+      "description": "Traditional RouteBuilder",
+      "code": "public class MyRoute extends RouteBuilder {\n    public void configure() {\n        from(\"direct:start\")\n            .process(new Processor() {\n                public void process(Exchange exchange) {\n                    Message in = exchange.getIn();\n                    String body = in.getBody(String.class);\n                    in.setBody(body.toUpperCase());\n                }\n            });\n    }\n}"
+    },
+    "new_pattern": {
+      "description": "Modern Camel 4 RouteBuilder with lambdas",
+      "code": "@Component\npublic class MyRoute extends RouteBuilder {\n    @Override\n    public void configure() {\n        from(\"direct:start\")\n            .process(exchange -> {\n                var message = exchange.getMessage();\n                String body = message.getBody(String.class);\n                message.setBody(body.toUpperCase());\n            });\n    }\n}"
+    }
+  },
+  "migration_strategies": {
+    "incremental": {
+      "description": "Migrate one component at a time",
+      "steps": [
+        "Update dependencies to Camel 4.10",
+        "Fix compilation errors (Exchange API)",
+        "Update component URIs",
+        "Test each route individually",
+        "Refactor to modern patterns (lambdas)"
+      ]
+    },
+    "big_bang": {
+      "description": "Migrate entire application at once",
+      "steps": [
+        "Create feature branch",
+        "Update all dependencies",
+        "Apply automated transformations",
+        "Fix remaining issues",
+        "Comprehensive testing",
+        "Deploy to production"
+      ],
+      "recommended": true
+    }
+  },
+  "common_errors": [
+    {
+      "error": "NoSuchMethodError: getIn",
+      "solution": "Replace .getIn() with .getMessage()",
+      "confidence": 1.0
+    },
+    {
+      "error": "NoSuchMethodError: getOut",
+      "solution": "Replace .getOut() with .getMessage()",
+      "confidence": 1.0
+    },
+    {
+      "error": "Unknown endpoint: http4:",
+      "solution": "Replace http4: with http:",
+      "confidence": 1.0
+    },
+    {
+      "error": "ClassNotFoundException: org.apache.camel.impl.DefaultCamelContext",
+      "solution": "Use org.apache.camel.CamelContext or org.apache.camel.support.DefaultCamelContext",
+      "confidence": 0.9
+    }
+  ],
+  "best_practices": [
+    "Always use @Component annotation on RouteBuilder classes",
+    "Prefer lambda expressions over anonymous inner classes",
+    "Use getMessage() consistently throughout routes",
+    "Leverage Java 21 features (records, pattern matching) where appropriate",
+    "Add comprehensive error handling",
+    "Include proper logging",
+    "Use property placeholders for configuration",
+    "Implement health checks",
+    "Add OpenAPI documentation for REST APIs"
+  ],
+  "testing_updates": {
+    "test_dependencies": [
+      "org.apache.camel:camel-test-spring-junit5:4.10.0.redhat-00001"
+    ],
+    "example_test": "@SpringBootTest\n@CamelSpringBootTest\npublic class MyRouteTest {\n    @Autowired\n    private ProducerTemplate template;\n    \n    @Test\n    public void testRoute() {\n        String result = template.requestBody(\"direct:start\", \"hello\", String.class);\n        assertEquals(\"HELLO\", result);\n    }\n}"
+  }
+}

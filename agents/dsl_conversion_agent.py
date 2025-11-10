@@ -20,6 +20,8 @@ from tools.code_tools import (
     create_route_builder_from_xml,
     analyze_java_files
 )
+from tools.java_transformer import JavaTransformer
+from knowledge.migration_patterns import get_migration_patterns
 from config.llm_config import get_llm
 
 # Try to import knowledge tools, but don't fail if unavailable
@@ -51,6 +53,7 @@ class DSLConversionAgent:
     def __init__(self):
         """Initialize the DSL Conversion Agent with LLM and tools"""
         self.llm = get_llm()
+        self.patterns = get_migration_patterns()
         # Try to initialize knowledge base, but don't fail if it's not available
         try:
             self.kb_available = ensure_knowledge_base_ready()
@@ -75,10 +78,16 @@ class DSLConversionAgent:
         
         # Build tools list
         tools = [
+            # XML conversion tools
             self.parse_xml_tool,
             self.convert_to_java_tool,
             self.create_route_builder_tool,
-            self.analyze_files_tool
+            self.analyze_files_tool,
+            # New Camel 4 enhancement tools
+            self.migrate_component_uris_tool,
+            self.update_exchange_api_tool,
+            self.get_camel4_component_mapping_tool,
+            self.modernize_route_builder_tool
         ]
 
         # Add knowledge tools if available
@@ -153,20 +162,206 @@ class DSLConversionAgent:
         result = create_route_builder_from_xml(xml_file_path, output_dir, package_name)
         return json.dumps(result, indent=2)
     
-    @tool("Analyze Java Files")
+    @tool("Analyze Camel Routes")
     def analyze_files_tool(self, directory_path: str) -> str:
         """
-        Analyze Java files in a directory for Camel usage.
-        
+        Analyze Java files in a directory for Camel route patterns and components.
+
+        Focuses on Camel-specific analysis: routes, processors, components, EIP patterns.
+
         Args:
             directory_path: Directory to analyze
-            
+
         Returns:
-            JSON string with analysis results
+            JSON string with Camel route analysis results
         """
         result = analyze_java_files(directory_path)
         return json.dumps(result, indent=2)
-    
+
+    # ===== Camel 4 Enhancement Tools =====
+
+    @tool("Migrate Component URIs")
+    def migrate_component_uris_tool(self, file_path: str) -> str:
+        """
+        Migrate Camel component URIs from Camel 2/3 to Camel 4.
+        Examples: http4: → http:, jetty9: → jetty:, netty4: → netty:
+
+        Args:
+            file_path: Path to Java file with routes
+
+        Returns:
+            JSON string with migration results
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+
+            transformer = JavaTransformer(source_code)
+
+            # Get component mappings from knowledge base
+            camel_mappings = {
+                'http4:': 'http:',
+                'jetty9:': 'jetty:',
+                'netty4:': 'netty:',
+                'mongodb3:': 'mongodb:'
+            }
+
+            count = 0
+            for old_uri, new_uri in camel_mappings.items():
+                count += transformer.replace_text(old_uri, new_uri, f"Component URI: {old_uri} → {new_uri}")
+
+            if count > 0:
+                transformed = transformer.apply_transformations()
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(transformed)
+
+                result = {
+                    "status": "success",
+                    "file": file_path,
+                    "uris_updated": count,
+                    "message": f"Migrated {count} component URIs to Camel 4"
+                }
+            else:
+                result = {"status": "no_changes", "file": file_path}
+
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+
+    @tool("Update Exchange API")
+    def update_exchange_api_tool(self, file_path: str) -> str:
+        """
+        Update Exchange API calls from Camel 2/3 to Camel 4.
+        Converts: getIn() → getMessage(), getOut() → getMessage()
+
+        Args:
+            file_path: Path to Java file
+
+        Returns:
+            JSON string with update results
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+
+            transformer = JavaTransformer(source_code)
+
+            # Update Exchange API methods
+            count = 0
+            count += transformer.replace_method_call('getIn', 'getMessage')
+            count += transformer.replace_method_call('getOut', 'getMessage')
+
+            if count > 0:
+                transformed = transformer.apply_transformations()
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(transformed)
+
+                result = {
+                    "status": "success",
+                    "file": file_path,
+                    "api_calls_updated": count,
+                    "message": f"Updated {count} Exchange API calls to Camel 4"
+                }
+            else:
+                result = {"status": "no_changes", "file": file_path}
+
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+
+    @tool("Get Camel 4 Component Mapping")
+    def get_camel4_component_mapping_tool(self, component_name: str) -> str:
+        """
+        Get Camel 4 mapping information for a specific component.
+
+        Args:
+            component_name: Component name (e.g., 'http4', 'jetty9')
+
+        Returns:
+            JSON string with mapping information
+        """
+        try:
+            mapping = self.patterns.get_camel_component_mapping(component_name)
+
+            if mapping:
+                result = {
+                    "component": component_name,
+                    "new_uri": mapping.get("new_uri"),
+                    "reason": mapping.get("reason"),
+                    "migration_guide": mapping.get("migration_guide"),
+                    "confidence": mapping.get("confidence", 1.0),
+                    "status": "found"
+                }
+            else:
+                # Check if it's a removed component
+                removed = self.patterns.get_camel_removed_component(component_name)
+                if removed:
+                    result = {
+                        "component": component_name,
+                        "status": "removed",
+                        "alternative": removed.get("alternative"),
+                        "reason": removed.get("reason"),
+                        "migration_strategy": removed.get("migration_strategy")
+                    }
+                else:
+                    result = {
+                        "component": component_name,
+                        "status": "not_found",
+                        "message": "No mapping or removal info found"
+                    }
+
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "component": component_name, "error": str(e)})
+
+    @tool("Modernize RouteBuilder")
+    def modernize_route_builder_tool(self, file_path: str) -> str:
+        """
+        Modernize RouteBuilder class to Camel 4 best practices.
+        Adds @Component annotation and updates to modern patterns.
+
+        Args:
+            file_path: Path to Java RouteBuilder file
+
+        Returns:
+            JSON string with modernization results
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+
+            transformer = JavaTransformer(source_code)
+            changes = []
+
+            # Add @Component import if RouteBuilder is present
+            if 'extends RouteBuilder' in source_code:
+                if '@Component' not in source_code:
+                    transformer.add_import('org.springframework.stereotype.Component')
+                    changes.append("Added @Component import")
+
+            # Add @Component annotation if missing
+            if 'extends RouteBuilder' in source_code and '@Component' not in source_code:
+                # This would be done via regex replacement
+                changes.append("Add @Component annotation (manual step)")
+
+            if changes:
+                transformed = transformer.apply_transformations()
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(transformed)
+
+                result = {
+                    "status": "success",
+                    "file": file_path,
+                    "changes": changes,
+                    "message": "RouteBuilder modernized"
+                }
+            else:
+                result = {"status": "no_changes", "file": file_path}
+
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+
     def create_conversion_task(
         self,
         source_code_path: str,

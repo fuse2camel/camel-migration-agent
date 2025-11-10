@@ -1,0 +1,133 @@
+# Spring Boot 2.x to 3.x Migration Mappings
+
+property_mappings:
+  # Server properties
+  server.use-forward-headers: server.forward-headers-strategy
+  server.max-http-header-size: server.max-http-request-header-size
+
+  # Resources properties
+  spring.resources.static-locations: spring.web.resources.static-locations
+  spring.resources.cache.period: spring.web.resources.cache.period
+  spring.resources.cache.cachecontrol: spring.web.resources.cache.cachecontrol
+  spring.resources.chain.enabled: spring.web.resources.chain.enabled
+
+  # Data source properties
+  spring.datasource.hikari.connection-test-query: spring.datasource.hikari.connection-test-query
+
+  # JPA properties (mostly unchanged, but some deprecated)
+  spring.jpa.hibernate.use-new-id-generator-mappings: spring.jpa.hibernate.use-new-id-generator-mappings
+
+  # Security properties
+  spring.security.oauth2.client.registration: spring.security.oauth2.client.registration
+  spring.security.oauth2.client.provider: spring.security.oauth2.client.provider
+
+property_value_mappings:
+  server.forward-headers-strategy:
+    "true": "framework"
+    "false": "none"
+
+deprecated_classes:
+  - class: "org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter"
+    replacement: "SecurityFilterChain bean"
+    migration_pattern: "lambda-based configuration"
+
+  - class: "org.springframework.boot.web.server.WebServerFactoryCustomizer"
+    replacement: "org.springframework.boot.web.server.WebServerFactoryCustomizer"
+    notes: "Interface unchanged but usage patterns updated"
+
+security_config_migration:
+  old_pattern: |
+    @EnableWebSecurity
+    public class SecurityConfig extends WebSecurityConfigurerAdapter {
+        @Override
+        protected void configure(HttpSecurity http) throws Exception {
+            http.authorizeRequests()
+                .antMatchers("/api/**").authenticated()
+                .and().formLogin();
+        }
+    }
+
+  new_pattern: |
+    @EnableWebSecurity
+    @Configuration
+    public class SecurityConfig {
+        @Bean
+        public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+            http.authorizeHttpRequests(authz -> authz
+                .requestMatchers("/api/**").authenticated()
+            ).formLogin(withDefaults());
+            return http.build();
+        }
+    }
+
+actuator_endpoints:
+  "/actuator/health": "/actuator/health"  # Unchanged
+  "/actuator/info": "/actuator/info"  # Unchanged
+  "/actuator/metrics": "/actuator/metrics"  # Unchanged
+
+web_mvc_patterns:
+  - old: "WebMvcConfigurerAdapter"
+    new: "WebMvcConfigurer interface"
+    migration: "Remove extends, implement interface directly"
+
+  - old: "antMatchers"
+    new: "requestMatchers"
+    context: "HttpSecurity configuration"
+
+  - old: "authorizeRequests"
+    new: "authorizeHttpRequests"
+    context: "Spring Security"
+
+dependency_updates:
+  javax_to_jakarta:
+    - "javax.persistence:javax.persistence-api -> jakarta.persistence:jakarta.persistence-api:3.1.0"
+    - "javax.validation:validation-api -> jakarta.validation:jakarta.validation-api:3.0.2"
+    - "javax.servlet:javax.servlet-api -> jakarta.servlet:jakarta.servlet-api:6.0.0"
+
+  spring_boot_starters:
+    - "org.springframework.boot:spring-boot-starter-web:3.2.0"
+    - "org.springframework.boot:spring-boot-starter-data-jpa:3.2.0"
+    - "org.springframework.boot:spring-boot-starter-security:3.2.0"
+    - "org.springframework.boot:spring-boot-starter-actuator:3.2.0"
+
+java_version_requirement:
+  minimum: "17"
+  recommended: "21"
+
+migration_checklist:
+  - "Update Java version to 17+"
+  - "Migrate javax.* to jakarta.*"
+  - "Update Spring Security configuration"
+  - "Replace WebSecurityConfigurerAdapter"
+  - "Update property names in application.properties"
+  - "Replace antMatchers with requestMatchers"
+  - "Test all actuator endpoints"
+  - "Verify data source configuration"
+  - "Check custom auto-configurations"
+
+common_errors:
+  - error: "NoSuchMethodError: antMatchers"
+    solution: "Replace with requestMatchers()"
+    example: ".antMatchers(\"/api/**\") -> .requestMatchers(\"/api/**\")"
+
+  - error: "ClassNotFoundException: javax.servlet"
+    solution: "Update to jakarta.servlet"
+    dependency: "jakarta.servlet:jakarta.servlet-api:6.0.0"
+
+  - error: "WebSecurityConfigurerAdapter not found"
+    solution: "Create SecurityFilterChain bean"
+    pattern: "security_config_migration"
+
+testing_updates:
+  - old: "@RunWith(SpringRunner.class)"
+    new: "@ExtendWith(SpringExtension.class)"
+    notes: "JUnit 5 migration"
+
+  - old: "@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)"
+    new: "@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)"
+    notes: "Unchanged, but verify with Jakarta Servlet API"
+
+observability:
+  micrometer: "Built-in, enhanced in Spring Boot 3"
+  tracing: "Spring Cloud Sleuth replaced by Micrometer Tracing"
+  metrics_export: "Multiple backends supported (Prometheus, Datadog, etc.)"

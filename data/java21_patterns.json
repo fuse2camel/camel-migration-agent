@@ -1,0 +1,226 @@
+{
+  "lambda_conversions": {
+    "anonymous_inner_class_to_lambda": {
+      "description": "Convert simple anonymous inner classes to lambda expressions",
+      "confidence": 0.95,
+      "patterns": [
+        {
+          "name": "Single method interface",
+          "old_pattern": "new Processor() {\n    public void process(Exchange exchange) {\n        // logic\n    }\n}",
+          "new_pattern": "exchange -> {\n    // logic\n}",
+          "applicability": "Functional interfaces with single abstract method"
+        },
+        {
+          "name": "Runnable",
+          "old_pattern": "new Runnable() {\n    public void run() {\n        System.out.println(\"Hello\");\n    }\n}",
+          "new_pattern": "() -> System.out.println(\"Hello\")",
+          "applicability": "Always safe for Runnable"
+        },
+        {
+          "name": "Comparator",
+          "old_pattern": "new Comparator<String>() {\n    public int compare(String a, String b) {\n        return a.compareTo(b);\n    }\n}",
+          "new_pattern": "String::compareTo",
+          "applicability": "Method reference when directly delegating"
+        }
+      ]
+    }
+  },
+  "stream_api_patterns": {
+    "for_loop_to_stream": {
+      "description": "Convert traditional for loops to Stream API",
+      "confidence": 0.85,
+      "patterns": [
+        {
+          "name": "Filter and collect",
+          "old_pattern": "List<String> result = new ArrayList<>();\nfor (String item : items) {\n    if (item != null && item.length() > 5) {\n        result.add(item.toUpperCase());\n    }\n}",
+          "new_pattern": "var result = items.stream()\n    .filter(Objects::nonNull)\n    .filter(item -> item.length() > 5)\n    .map(String::toUpperCase)\n    .toList();",
+          "benefits": ["More concise", "Functional style", "Easier to parallelize"]
+        },
+        {
+          "name": "Sum calculation",
+          "old_pattern": "int sum = 0;\nfor (int num : numbers) {\n    sum += num;\n}",
+          "new_pattern": "int sum = numbers.stream()\n    .mapToInt(Integer::intValue)\n    .sum();",
+          "benefits": ["Clearer intent", "No mutable state"]
+        },
+        {
+          "name": "Find first matching",
+          "old_pattern": "String found = null;\nfor (String item : items) {\n    if (item.startsWith(\"prefix\")) {\n        found = item;\n        break;\n    }\n}",
+          "new_pattern": "String found = items.stream()\n    .filter(item -> item.startsWith(\"prefix\"))\n    .findFirst()\n    .orElse(null);",
+          "benefits": ["Explicit optional handling", "No break statement"]
+        }
+      ]
+    }
+  },
+  "var_type_inference": {
+    "description": "Use var for local variable type inference (Java 10+)",
+    "confidence": 0.9,
+    "patterns": [
+      {
+        "name": "Collection initialization",
+        "old_pattern": "List<String> names = new ArrayList<>();\nMap<String, Integer> counts = new HashMap<>();",
+        "new_pattern": "var names = new ArrayList<String>();\nvar counts = new HashMap<String, Integer>();",
+        "notes": "Type arguments must be explicit on right side"
+      },
+      {
+        "name": "Stream operations",
+        "old_pattern": "List<String> result = items.stream()\n    .filter(Objects::nonNull)\n    .toList();",
+        "new_pattern": "var result = items.stream()\n    .filter(Objects::nonNull)\n    .toList();",
+        "benefits": ["Reduces verbosity", "Maintains type safety"]
+      }
+    ],
+    "anti_patterns": [
+      {
+        "description": "Don't use var when type is not obvious",
+        "bad_example": "var data = process();  // What type is this?",
+        "good_example": "ProcessResult data = process();  // Clear type"
+      }
+    ]
+  },
+  "switch_expressions": {
+    "description": "Use switch expressions (Java 14+, standard in Java 21)",
+    "confidence": 0.9,
+    "patterns": [
+      {
+        "name": "Simple value assignment",
+        "old_pattern": "String result;\nswitch (day) {\n    case MONDAY:\n    case FRIDAY:\n        result = \"Work day\";\n        break;\n    case SATURDAY:\n    case SUNDAY:\n        result = \"Weekend\";\n        break;\n    default:\n        result = \"Midweek\";\n}",
+        "new_pattern": "String result = switch (day) {\n    case MONDAY, FRIDAY -> \"Work day\";\n    case SATURDAY, SUNDAY -> \"Weekend\";\n    default -> \"Midweek\";\n};",
+        "benefits": ["No break statements", "Exhaustiveness checking", "Expression vs statement"]
+      },
+      {
+        "name": "With yield",
+        "old_pattern": "int value;\nswitch (type) {\n    case TYPE_A:\n        value = complexCalculation();\n        break;\n    default:\n        value = 0;\n}",
+        "new_pattern": "int value = switch (type) {\n    case TYPE_A -> {\n        var temp = complexCalculation();\n        yield temp;\n    }\n    default -> 0;\n};",
+        "notes": "Use yield for multi-statement blocks"
+      }
+    ]
+  },
+  "text_blocks": {
+    "description": "Use text blocks for multiline strings (Java 15+)",
+    "confidence": 0.95,
+    "patterns": [
+      {
+        "name": "JSON strings",
+        "old_pattern": "String json = \"{\\n\" +\n    \"  \\\"name\\\": \\\"John\\\",\\n\" +\n    \"  \\\"age\\\": 30\\n\" +\n    \"}\";",
+        "new_pattern": "String json = \"\"\"\n    {\n      \"name\": \"John\",\n      \"age\": 30\n    }\n    \"\"\";",
+        "benefits": ["No escape sequences", "Readable formatting", "Natural indentation"]
+      },
+      {
+        "name": "SQL queries",
+        "old_pattern": "String sql = \"SELECT id, name, email \" +\n    \"FROM users \" +\n    \"WHERE active = true \" +\n    \"ORDER BY name\";",
+        "new_pattern": "String sql = \"\"\"\n    SELECT id, name, email\n    FROM users\n    WHERE active = true\n    ORDER BY name\n    \"\"\";",
+        "benefits": ["Better readability", "Easy to modify"]
+      },
+      {
+        "name": "HTML templates",
+        "old_pattern": "String html = \"<html>\\n\" +\n    \"  <body>\\n\" +\n    \"    <h1>Hello</h1>\\n\" +\n    \"  </body>\\n\" +\n    \"</html>\";",
+        "new_pattern": "String html = \"\"\"\n    <html>\n      <body>\n        <h1>Hello</h1>\n      </body>\n    </html>\n    \"\"\";",
+        "applicability": "All multiline string literals"
+      }
+    ]
+  },
+  "records": {
+    "description": "Use records for immutable data carriers (Java 14+, standard in Java 16)",
+    "confidence": 0.8,
+    "patterns": [
+      {
+        "name": "Simple data class to record",
+        "old_pattern": "public class User {\n    private final String name;\n    private final int age;\n    \n    public User(String name, int age) {\n        this.name = name;\n        this.age = age;\n    }\n    \n    public String getName() { return name; }\n    public int getAge() { return age; }\n    \n    @Override\n    public boolean equals(Object o) { /* ... */ }\n    @Override\n    public int hashCode() { /* ... */ }\n    @Override\n    public String toString() { /* ... */ }\n}",
+        "new_pattern": "public record User(String name, int age) {}",
+        "benefits": ["Immutable by default", "Auto-generated methods", "Compact syntax"]
+      },
+      {
+        "name": "Record with validation",
+        "old_pattern": "public class Point {\n    private final int x;\n    private final int y;\n    \n    public Point(int x, int y) {\n        if (x < 0 || y < 0) throw new IllegalArgumentException();\n        this.x = x;\n        this.y = y;\n    }\n    // getters, equals, hashCode, toString\n}",
+        "new_pattern": "public record Point(int x, int y) {\n    public Point {\n        if (x < 0 || y < 0) {\n            throw new IllegalArgumentException(\"Coordinates must be non-negative\");\n        }\n    }\n}",
+        "notes": "Compact constructor for validation"
+      }
+    ],
+    "eligibility_criteria": [
+      "Class is final or effectively final",
+      "All fields are final",
+      "No setters",
+      "Simple data carrier without complex behavior",
+      "equals/hashCode based on all fields"
+    ]
+  },
+  "pattern_matching": {
+    "description": "Use pattern matching for instanceof (Java 16+)",
+    "confidence": 0.95,
+    "patterns": [
+      {
+        "name": "instanceof with cast",
+        "old_pattern": "if (obj instanceof String) {\n    String str = (String) obj;\n    System.out.println(str.toUpperCase());\n}",
+        "new_pattern": "if (obj instanceof String str) {\n    System.out.println(str.toUpperCase());\n}",
+        "benefits": ["Eliminates cast", "Reduces boilerplate", "Type-safe"]
+      },
+      {
+        "name": "Complex conditionals",
+        "old_pattern": "if (obj instanceof Integer) {\n    Integer num = (Integer) obj;\n    if (num > 0) {\n        System.out.println(\"Positive: \" + num);\n    }\n}",
+        "new_pattern": "if (obj instanceof Integer num && num > 0) {\n    System.out.println(\"Positive: \" + num);\n}",
+        "notes": "Pattern variable available in && condition"
+      }
+    ]
+  },
+  "sealed_classes": {
+    "description": "Use sealed classes for controlled hierarchies (Java 17+)",
+    "confidence": 0.7,
+    "patterns": [
+      {
+        "name": "Restricted type hierarchy",
+        "old_pattern": "public abstract class Shape {}\npublic class Circle extends Shape {}\npublic class Rectangle extends Shape {}\n// Anyone can extend Shape",
+        "new_pattern": "public sealed interface Shape\n    permits Circle, Rectangle {}\n\npublic final class Circle implements Shape {}\npublic final class Rectangle implements Shape {}",
+        "benefits": ["Exhaustive pattern matching", "Controlled extension", "Better domain modeling"]
+      }
+    ],
+    "use_cases": [
+      "Domain modeling with fixed set of subtypes",
+      "State machines",
+      "AST nodes",
+      "Message types in protocols"
+    ]
+  },
+  "modernization_rules": {
+    "aggressive": {
+      "description": "Apply all modern patterns",
+      "applies": ["lambdas", "streams", "var", "switch_expressions", "text_blocks", "records", "pattern_matching"],
+      "confidence_threshold": 0.7
+    },
+    "conservative": {
+      "description": "Only apply high-confidence transformations",
+      "applies": ["lambdas", "pattern_matching", "text_blocks"],
+      "confidence_threshold": 0.9
+    },
+    "balanced": {
+      "description": "Apply most modern patterns with good confidence",
+      "applies": ["lambdas", "streams", "var", "switch_expressions", "text_blocks", "pattern_matching"],
+      "confidence_threshold": 0.85
+    }
+  },
+  "migration_strategy": {
+    "order": [
+      "1. Text blocks (safest, highest readability gain)",
+      "2. Pattern matching for instanceof (no behavior change)",
+      "3. Lambda expressions (well-understood, widely used)",
+      "4. Switch expressions (clear improvement)",
+      "5. Var inference (controversial, use judiciously)",
+      "6. Stream API (may affect performance, test thoroughly)",
+      "7. Records (requires careful analysis of eligibility)",
+      "8. Sealed classes (opt-in for new designs)"
+    ]
+  },
+  "performance_considerations": {
+    "streams": {
+      "overhead": "Stream operations have overhead for small collections",
+      "guideline": "Use streams for collections > 100 elements or when parallelization beneficial",
+      "benchmark": "Always benchmark performance-critical code"
+    },
+    "records": {
+      "overhead": "Minimal, often equal or better than regular classes",
+      "benefits": "Potential JVM optimizations for records"
+    },
+    "var": {
+      "overhead": "None - purely compile-time feature",
+      "readability": "May reduce readability if overused"
+    }
+  }
+}

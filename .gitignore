@@ -207,10 +207,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-.idea
+
 
 knowledge/vector_db/model_cache
 *.pkl
 *.index
 *.faiss
 .DS_Store
+
+.idea/

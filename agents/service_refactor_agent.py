@@ -356,14 +356,14 @@ public class {class_name} implements Processor {{
         backup: bool = True
     ) -> Task:
         """
-        Create a task for refactoring Java business logic for Camel 4 compatibility.
-        
+        Create a task for refactoring Java business logic for complete Red Hat Camel 4.10 migration.
+
         Args:
             source_code_path: Path to the source code directory
             backup: Whether to create backups of original files
-            
+
         Returns:
-            CrewAI Task for service refactoring
+            CrewAI Task for comprehensive service refactoring
         """
         # Optionally analyze the codebase first
         try:
@@ -371,23 +371,64 @@ public class {class_name} implements Processor {{
             file_count = analysis.get('camel_file_count', 'unknown')
         except Exception:
             file_count = 'unknown'
-        
+
         return Task(
             description=f"""
-            Refactor Java business logic for Camel 4 compatibility:
-            1. Analyze Java files in: {source_code_path}
-            2. Identify Processor implementations
-            3. Identify Bean components and Transformers
-            4. Update Exchange API usage (getIn() -> getMessage())
-            5. Update deprecated method calls
-            6. Fix imports for relocated classes
-            7. Ensure Spring annotations are correct
+            Refactor Java business logic for complete Red Hat Camel 4.10 enterprise migration.
 
-            Found {file_count} Camel-related files to refactor.
+            **CRITICAL: You MUST use ALL available migration tools, not just Camel 4 refactoring!**
 
-            Make sure all business logic remains intact while updating to Camel 4 APIs.
+            **PHASE 1: Analysis & Discovery**
+            1. Analyze all Java files in: {source_code_path}
+            2. Use scan_javax_usage_tool on EVERY .java file to find javax.* imports
+            3. Identify Processor implementations and RouteBuilder classes
+            4. Identify Bean components and Transformers
+            5. Check for Spring Boot application.properties and application.yml files
+
+            **PHASE 2: Camel 4 API Migration**
+            6. Update Exchange API usage: getIn() -> getMessage(), getOut() -> getMessage()
+            7. Fix imports for relocated classes: org.apache.camel.impl.* -> org.apache.camel.support.*
+            8. Update deprecated method calls and patterns
+            9. Add @Component annotations to RouteBuilder classes
+            10. Use refactor_java_tool to apply Camel 4 transformations
+
+            **PHASE 3: Jakarta EE Migration (REQUIRED)**
+            11. For EACH Java file with javax.* imports found in Phase 1:
+                - Use migrate_jakarta_imports_tool to convert javax.* -> jakarta.*
+                - Verify javax.validation.* -> jakarta.validation.*
+                - Verify javax.inject.* -> jakarta.inject.*
+                - Verify javax.annotation.* -> jakarta.annotation.*
+                - Verify javax.persistence.* -> jakarta.persistence.*
+                - Verify javax.servlet.* -> jakarta.servlet.*
+            12. Report all Jakarta EE migrations performed
+
+            **PHASE 4: Spring Boot 2 -> 3 Migration (if applicable)**
+            13. If application.properties exists: use migrate_spring_properties_tool
+            14. If application.yml exists: use migrate_spring_yaml_tool
+            15. Migrate deprecated Spring Boot 2.x configurations
+
+            **PHASE 5: Verification & Reporting**
+            16. Ensure ALL business logic remains intact
+            17. Generate comprehensive report with:
+                - Number of Camel 4 transformations
+                - Number of javax -> jakarta migrations
+                - Number of Spring Boot migrations
+                - List of all modified files
+
+            Found {file_count} Camel-related files to process.
+
+            **REMEMBER:**
+            - Use scan_javax_usage_tool FIRST to find javax imports
+            - Use migrate_jakarta_imports_tool on ALL files with javax imports
+            - Use migrate_spring_properties_tool on properties files
+            - This is a COMPLETE migration, not just Camel 4!
             """,
-            expected_output="A report of all refactored files with changes made",
+            expected_output="""Comprehensive migration report including:
+            1. Camel 4 API updates (getIn/getOut -> getMessage)
+            2. Jakarta EE migrations (javax -> jakarta) with file-by-file details
+            3. Spring Boot 2->3 property migrations
+            4. Import relocations (org.apache.camel.impl -> support)
+            5. Complete list of all modified files with change summaries""",
             agent=self.agent
         )
     
@@ -554,6 +595,8 @@ def service_refactor_agent(state):
         refactored_files = []
         refactoring_changes = []
         already_converted_files = []
+        jakarta_migrated_files = []
+        jakarta_migration_details = []
 
         print(f"Processing {len(java_files)} files in {len(file_batches)} batches...")
 
@@ -571,6 +614,36 @@ def service_refactor_agent(state):
 
                     # Apply Camel 4 refactoring
                     refactored_content = refactor_java_for_camel4(original_content)
+
+                    # ============ JAKARTA EE MIGRATION (NEW) ============
+                    # Apply Jakarta EE migration (javax.* -> jakarta.*)
+                    from tools.java_parser import find_javax_imports
+                    from tools.java_transformer import JavaTransformer
+
+                    javax_imports = find_javax_imports(java_file)
+
+                    if javax_imports:
+                        print(f"  Found {len(javax_imports)} javax.* imports in {os.path.basename(java_file)}, migrating to jakarta.*...")
+
+                        transformer = JavaTransformer(refactored_content)
+                        mappings = agent.patterns.get_all_jakarta_packages()
+
+                        jakarta_count = 0
+                        for old_pkg, new_pkg in mappings.items():
+                            if transformer.replace_import(old_pkg, new_pkg):
+                                jakarta_count += 1
+                            jakarta_count += transformer.replace_package_reference(old_pkg, new_pkg)
+
+                        if jakarta_count > 0:
+                            refactored_content = transformer.apply_transformations()
+                            jakarta_migrated_files.append(java_file)
+                            jakarta_migration_details.append({
+                                'file': java_file,
+                                'javax_imports': javax_imports,
+                                'transformations': jakarta_count
+                            })
+                            print(f"  ✓ Migrated {jakarta_count} javax references to jakarta in {os.path.basename(java_file)}")
+                    # ====================================================
 
                     if refactored_content != original_content:
                         # File HAS changes - refactor it
@@ -612,6 +685,13 @@ def service_refactor_agent(state):
         if refactored_files:
             tasks_completed.append(f"Successfully refactored {len(refactored_files)} Java files for Red Hat Camel 4.10")
 
+        # Add Jakarta EE migration summary
+        if jakarta_migrated_files:
+            tasks_completed.append(f"Successfully migrated {len(jakarta_migrated_files)} Java files from javax.* to jakarta.*")
+            for detail in jakarta_migration_details:
+                file_name = os.path.basename(detail['file'])
+                tasks_completed.append(f"  - {file_name}: {detail['transformations']} javax → jakarta transformations")
+
         # Add summary message about already converted files
         if already_converted_files and not refactored_files:
             tasks_completed.append(f"All {len(already_converted_files)} Java files already converted to Camel 4 (from previous migration run)")
@@ -626,6 +706,8 @@ def service_refactor_agent(state):
                 "refactored_files": refactored_files,
                 "already_converted_files": already_converted_files,
                 "refactoring_changes": refactoring_changes,
+                "jakarta_migrated_files": len(jakarta_migrated_files),
+                "jakarta_migration_details": jakarta_migration_details,
                 "backup_created": True,
                 "status": "already_converted" if already_converted_files and not refactored_files else "success"
             }

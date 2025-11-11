@@ -16,11 +16,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.code_tools import (
     refactor_java_code,
-    analyze_java_files
+    analyze_java_files,
+    needs_java_migration,
+    batch_files
 )
 from tools.java_parser import JavaParser, find_javax_imports
 from tools.java_transformer import JavaTransformer
 from tools.config_parser import migrate_application_properties, migrate_application_yaml
+from tools.java_refactor_utils import (
+    refactor_java_for_camel4,
+    is_file_already_camel4,
+    analyze_refactoring_changes
+)
 from knowledge.migration_patterns import get_migration_patterns
 from config.llm_config import get_llm
 
@@ -67,10 +74,20 @@ class ServiceRefactorAgent:
                 self.migrate_spring_properties_tool,
                 self.migrate_spring_yaml_tool,
                 # New Java modernization tools
-                self.modernize_java_code_tool,
+                self.analyze_java_modernization_tool,
                 self.analyze_modernization_opportunities_tool
             ]
         )
+
+    @staticmethod
+    def _create_success_response(file_path: str, **data) -> str:
+        """Create standardized success response"""
+        return json.dumps({"status": "success", "file": file_path, **data}, indent=2)
+
+    @staticmethod
+    def _create_error_response(file_path: str, error: Exception) -> str:
+        """Create standardized error response"""
+        return json.dumps({"status": "error", "file": file_path, "error": str(error)}, indent=2)
     
     @tool("Refactor Java Code")
     def refactor_java_tool(self, java_file_path: str, output_path: str = None) -> str:
@@ -168,18 +185,20 @@ public class {class_name} implements Processor {{
                 "servlet": [i for i in javax_imports if "servlet" in i],
                 "ws_rs": [i for i in javax_imports if "ws.rs" in i],
                 "inject": [i for i in javax_imports if "inject" in i],
-                "other": [i for i in javax_imports if i not in sum([v for v in categorized.values()], [])]
             }
+            categorized["other"] = [
+                i for i in javax_imports
+                if not any(i in cat_list for cat_list in categorized.values())
+            ]
 
-            result = {
-                "file": file_path,
-                "total_javax_imports": len(javax_imports),
-                "categorized": categorized,
-                "needs_migration": len(javax_imports) > 0
-            }
-            return json.dumps(result, indent=2)
+            return self._create_success_response(
+                file_path,
+                total_javax_imports=len(javax_imports),
+                categorized=categorized,
+                needs_migration=len(javax_imports) > 0
+            )
         except Exception as e:
-            return json.dumps({"error": str(e), "file": file_path})
+            return self._create_error_response(file_path, e)
 
     @tool("Migrate Jakarta Imports")
     def migrate_jakarta_imports_tool(self, file_path: str) -> str:
@@ -209,18 +228,16 @@ public class {class_name} implements Processor {{
                 transformed = transformer.apply_transformations()
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(transformed)
-                result = {
-                    "status": "success",
-                    "file": file_path,
-                    "transformations": count,
-                    "message": f"Migrated {count} javax references to jakarta"
-                }
+                return self._create_success_response(
+                    file_path,
+                    transformations=count,
+                    message=f"Migrated {count} javax references to jakarta"
+                )
             else:
-                result = {"status": "no_changes", "file": file_path}
+                return json.dumps({"status": "no_changes", "file": file_path}, indent=2)
 
-            return json.dumps(result, indent=2)
         except Exception as e:
-            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+            return self._create_error_response(file_path, e)
 
     # ===== Spring Boot Migration Tools =====
 
@@ -239,7 +256,7 @@ public class {class_name} implements Processor {{
             result = migrate_application_properties(properties_file, backup=True)
             return json.dumps(result, indent=2)
         except Exception as e:
-            return json.dumps({"status": "error", "file": properties_file, "error": str(e)})
+            return self._create_error_response(properties_file, e)
 
     @tool("Migrate Spring Boot YAML")
     def migrate_spring_yaml_tool(self, yaml_file: str) -> str:
@@ -256,21 +273,22 @@ public class {class_name} implements Processor {{
             result = migrate_application_yaml(yaml_file, backup=True)
             return json.dumps(result, indent=2)
         except Exception as e:
-            return json.dumps({"status": "error", "file": yaml_file, "error": str(e)})
+            return self._create_error_response(yaml_file, e)
 
     # ===== Java Modernization Tools =====
 
-    @tool("Modernize Java Code")
-    def modernize_java_code_tool(self, file_path: str, strategy: str = "balanced") -> str:
+    @tool("Analyze Java Modernization Candidates")
+    def analyze_java_modernization_tool(self, file_path: str, strategy: str = "balanced") -> str:
         """
-        Modernize Java code to use Java 21 features (lambdas, streams, var, etc.).
+        Analyze Java code for modernization opportunities (Java 21 features).
+        This is an analysis-only tool - it identifies opportunities but doesn't modify code.
 
         Args:
             file_path: Path to Java source file
-            strategy: Modernization strategy ('aggressive', 'balanced', 'conservative')
+            strategy: Analysis strategy ('aggressive', 'balanced', 'conservative')
 
         Returns:
-            JSON string with modernization results
+            JSON string with analysis results
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -282,26 +300,14 @@ public class {class_name} implements Processor {{
             # Find lambda conversion opportunities
             lambda_candidates = parser.find_lambda_candidates()
 
-            transformer = JavaTransformer(source_code)
-            modernizations = []
-
-            # Apply modernizations based on strategy
-            strategy_config = self.patterns.get_java_modernization_strategy(strategy)
-
-            # Simple pattern replacements for now
-            # Lambda conversions would be handled by LLM with more context
-
-            result = {
-                "status": "success",
-                "file": file_path,
-                "lambda_candidates": len(lambda_candidates),
-                "strategy": strategy,
-                "message": f"Found {len(lambda_candidates)} lambda conversion opportunities"
-            }
-
-            return json.dumps(result, indent=2)
+            return self._create_success_response(
+                file_path,
+                lambda_candidates=len(lambda_candidates),
+                strategy=strategy,
+                message=f"Found {len(lambda_candidates)} lambda conversion opportunities"
+            )
         except Exception as e:
-            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+            return self._create_error_response(file_path, e)
 
     @tool("Analyze Modernization Opportunities")
     def analyze_modernization_opportunities_tool(self, file_path: str) -> str:
@@ -321,26 +327,28 @@ public class {class_name} implements Processor {{
             parser = JavaParser()
             parser.parse_source(source_code)
 
+            # Find lambda candidates (only call once)
+            lambda_candidates = parser.find_lambda_candidates()
+
             opportunities = {
-                "lambda_candidates": len(parser.find_lambda_candidates()),
+                "lambda_candidates": len(lambda_candidates),
                 "has_exchange_api": parser.has_exchange_api_usage(),
-                "anonymous_classes": len([c for c in parser.find_lambda_candidates()]),
                 "current_java_version": parser.detect_version(source_code) if hasattr(parser, 'detect_version') else "unknown"
             }
 
-            result = {
-                "status": "success",
-                "file": file_path,
-                "opportunities": opportunities,
-                "recommendations": []
-            }
-
+            recommendations = []
             if opportunities["lambda_candidates"] > 0:
-                result["recommendations"].append(f"Convert {opportunities['lambda_candidates']} anonymous classes to lambdas")
+                recommendations.append(
+                    f"Convert {opportunities['lambda_candidates']} anonymous classes to lambdas"
+                )
 
-            return json.dumps(result, indent=2)
+            return self._create_success_response(
+                file_path,
+                opportunities=opportunities,
+                recommendations=recommendations
+            )
         except Exception as e:
-            return json.dumps({"status": "error", "file": file_path, "error": str(e)})
+            return self._create_error_response(file_path, e)
 
     def create_refactor_task(
         self,
@@ -374,58 +382,14 @@ public class {class_name} implements Processor {{
             5. Update deprecated method calls
             6. Fix imports for relocated classes
             7. Ensure Spring annotations are correct
-            
+
             Found {file_count} Camel-related files to refactor.
-            
+
             Make sure all business logic remains intact while updating to Camel 4 APIs.
             """,
             expected_output="A report of all refactored files with changes made",
             agent=self.agent
         )
-        
-        try:
-            # Execute the refactoring
-            result = crew.kickoff()
-            
-            # Perform actual refactoring
-            refactored_files = []
-            refactoring_details = []
-            
-            # Refactor each Camel-related file
-            for file_path in analysis.get('camel_files', []):
-                if backup:
-                    import shutil
-                    backup_path = f"{file_path}.backup"
-                    shutil.copy2(file_path, backup_path)
-                
-                refactor_result = refactor_java_code(file_path)
-                
-                if refactor_result['status'] == 'Success':
-                    refactored_files.append(file_path)
-                    refactoring_details.append({
-                        'file': file_path,
-                        'changes': refactor_result.get('changes_made', [])
-                    })
-            
-            return {
-                "status": "Success",
-                "source_directory": source_code_path,
-                "total_java_files": analysis['total_java_files'],
-                "camel_files": analysis['camel_file_count'],
-                "refactored_files": refactored_files,
-                "refactored_count": len(refactored_files),
-                "refactoring_details": refactoring_details,
-                "backups_created": backup,
-                "summary": self._generate_summary(refactoring_details),
-                "message": f"Successfully refactored {len(refactored_files)} Java files for Camel 4"
-            }
-            
-        except Exception as e:
-            return {
-                "status": "Failure",
-                "error": str(e),
-                "message": f"Failed to refactor business logic: {str(e)}"
-            }
     
     def _generate_summary(self, refactoring_details: List[Dict]) -> str:
         """
@@ -674,128 +638,3 @@ def service_refactor_agent(state):
         
     except Exception as e:
         return {"error": f"Service refactor agent failed: {str(e)}"}
-
-
-def refactor_java_for_camel4(java_content: str) -> str:
-    """
-    Refactor Java code from Camel 2/3 to Camel 4 APIs
-    Based on Red Hat Camel 4.10 migration guidelines
-    """
-    import re
-    
-    refactored_content = java_content
-    
-    # Update Exchange API calls (most important change)
-    # getIn() -> getMessage()
-    refactored_content = re.sub(r'\.getIn\(\)', '.getMessage()', refactored_content)
-    
-    # getOut() -> getMessage() (in most cases)
-    refactored_content = re.sub(r'\.getOut\(\)', '.getMessage()', refactored_content)
-    
-    # Update imports for relocated classes
-    import_mappings = {
-        'org.apache.camel.impl.DefaultCamelContext': 'org.apache.camel.CamelContext',
-        'org.apache.camel.impl.SimpleRegistry': 'org.apache.camel.support.SimpleRegistry',
-        'org.apache.camel.util.CamelContextHelper': 'org.apache.camel.support.CamelContextHelper',
-        'org.apache.camel.impl.DefaultMessage': 'org.apache.camel.support.DefaultMessage',
-        'org.apache.camel.impl.DefaultExchange': 'org.apache.camel.support.DefaultExchange'
-    }
-    
-    for old_import, new_import in import_mappings.items():
-        refactored_content = refactored_content.replace(f'import {old_import}', f'import {new_import}')
-    
-    # Update component URIs that changed in Camel 4
-    uri_mappings = {
-        'http4:': 'http:',
-        'jetty9:': 'jetty:',
-        'netty4:': 'netty:'
-    }
-    
-    for old_uri, new_uri in uri_mappings.items():
-        refactored_content = refactored_content.replace(f'"{old_uri}', f'"{new_uri}')
-        refactored_content = refactored_content.replace(f"'{old_uri}", f"'{new_uri}")
-    
-    # Update deprecated method calls
-    deprecated_mappings = {
-        '.setHeader(': '.setHeader(',  # Most header methods remain the same
-        '.getContext().getRegistry()': '.getCamelContext().getRegistry()',
-    }
-    
-    for old_method, new_method in deprecated_mappings.items():
-        refactored_content = refactored_content.replace(old_method, new_method)
-    
-    # Add Spring Boot annotations for modern Camel 4
-    if 'extends RouteBuilder' in refactored_content and '@Component' not in refactored_content:
-        # Add @Component annotation to RouteBuilder classes
-        refactored_content = re.sub(
-            r'(public class \w+RouteBuilder? extends RouteBuilder)',
-            r'@Component\n\1',
-            refactored_content
-        )
-        
-        # Add import for @Component if not present
-        if 'import org.springframework.stereotype.Component' not in refactored_content:
-            if 'import org.apache.camel' in refactored_content:
-                refactored_content = refactored_content.replace(
-                    'import org.apache.camel',
-                    'import org.springframework.stereotype.Component;\nimport org.apache.camel'
-                )
-    
-    return refactored_content
-
-
-def is_file_already_camel4(java_content: str) -> bool:
-    """
-    Check if a Java file already uses Camel 4 APIs.
-
-    Args:
-        java_content: Java file content
-
-    Returns:
-        True if file appears to already be using Camel 4 patterns
-    """
-    # Check for Camel 4 patterns
-    has_get_message = '.getMessage()' in java_content
-
-    # Check that it DOESN'T have old Camel 2/3 patterns
-    has_get_in = '.getIn()' in java_content
-    has_get_out = '.getOut()' in java_content
-    has_old_uris = any(uri in java_content for uri in ['http4:', 'jetty9:', 'netty4:'])
-    has_old_imports = 'org.apache.camel.impl.' in java_content
-
-    # If it has getMessage() and doesn't have old patterns, it's likely Camel 4
-    if has_get_message and not (has_get_in or has_get_out):
-        return True
-
-    # If it has no Exchange API usage at all but is a RouteBuilder, assume it's fine
-    if 'extends RouteBuilder' in java_content and not (has_get_in or has_get_out):
-        return True
-
-    return False
-
-
-def analyze_refactoring_changes(original: str, refactored: str) -> list:
-    """
-    Analyze what changes were made during refactoring
-    """
-    changes = []
-    
-    if '.getIn()' in original and '.getMessage()' in refactored:
-        changes.append("Updated Exchange.getIn() to getMessage() for Camel 4 compatibility")
-    
-    if '.getOut()' in original and '.getMessage()' in refactored:
-        changes.append("Updated Exchange.getOut() to getMessage() for Camel 4 compatibility")
-    
-    if 'http4:' in original and 'http:' in refactored:
-        changes.append("Updated HTTP component URI from http4: to http:")
-    
-    if 'jetty9:' in original and 'jetty:' in refactored:
-        changes.append("Updated Jetty component URI from jetty9: to jetty:")
-    
-    if '@Component' in refactored and '@Component' not in original:
-        changes.append("Added @Component annotation for Spring Boot integration")
-    
-    if 'org.apache.camel.impl.' in original and 'org.apache.camel.support.' in refactored:
-        changes.append("Updated imports for relocated Camel support classes")
-    
-    return changes

@@ -456,23 +456,35 @@ def needs_java_migration(java_file_path: str) -> bool:
     """
     Check if a Java file needs Camel 4 migration.
     Simple filtering to avoid processing files that don't need changes.
+    Also checks for Swagger and javax imports that need migration.
     """
     try:
         with open(java_file_path, 'r') as f:
             content = f.read()
 
-        # Skip if no Camel imports
-        if 'import org.apache.camel' not in content:
+        # Check for things that need migration
+        has_camel_imports = 'import org.apache.camel' in content
+        has_swagger_imports = 'import io.swagger.annotations' in content
+        has_javax_imports = 'import javax.' in content
+
+        # If no Camel, Swagger, or javax imports, skip
+        if not (has_camel_imports or has_swagger_imports or has_javax_imports):
             return False
 
-        # Skip if already migrated (has getMessage, no getIn/getOut)
-        has_old_api = '.getIn()' in content or '.getOut()' in content
-        has_new_api = '.getMessage()' in content
+        # For Camel imports, skip if already migrated (has getMessage, no getIn/getOut)
+        if has_camel_imports:
+            has_old_api = '.getIn()' in content or '.getOut()' in content
+            has_new_api = '.getMessage()' in content
 
-        if has_new_api and not has_old_api:
-            return False  # Already Camel 4
+            if has_new_api and not has_old_api:
+                # Already Camel 4, but might still need Swagger/javax migration
+                if not (has_swagger_imports or has_javax_imports):
+                    return False
 
-        # Needs migration if has old API or has Camel imports
+        # Needs migration if has:
+        # - Camel old API
+        # - Swagger annotations
+        # - javax imports
         return True
 
     except Exception:

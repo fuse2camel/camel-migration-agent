@@ -16,7 +16,7 @@ MODEL_BASE_URL=https://api.openai.com/v1
 MODEL_TEMPERATURE=0.7
 EOF
 
-python -m tasks.run_coordinator --source-path /path/to/your/repo --branch feature/fuse2camel --port 8000
+python -m tasks.run_coordinator --source-path /Users/nxu/PycharmProjects/sample-fuse6-app --branch feature/fuse2camel --port 8000
 # Dashboard opens and stays up at http://127.0.0.1:8000/ (Ctrl+C to stop)
 ```
 

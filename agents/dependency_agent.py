@@ -144,6 +144,7 @@ class DependencyAgent:
                     ('org.apache.camel', 'camel-jackson'): ('org.apache.camel.springboot', 'camel-jackson-starter'),
                     ('org.apache.camel', 'camel-test-spring'): ('org.apache.camel', 'camel-test-spring-junit5'),
                     ('org.apache.activemq', 'activemq-camel'): ('org.apache.camel.springboot', 'camel-jms-starter'),
+                    ('org.apache.camel', 'camel-swagger-java'): ('org.apache.camel', 'camel-openapi-java'),
                 }
                 
                 # Dependencies to remove (conflicts with Spring Boot)
@@ -846,16 +847,18 @@ def update_camel_dependencies_to_redhat_4_10(pom_content: str) -> str:
     # Update specific Camel dependencies to Red Hat Spring Boot starters
     # Both camel-core and camel-spring should result in a single camel-spring-boot-starter
     dependency_mappings = {
-        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-core</artifactId>': 
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-core</artifactId>':
             ('org.apache.camel.springboot', 'camel-spring-boot-starter'),
-        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-spring</artifactId>': 
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-spring</artifactId>':
             ('org.apache.camel.springboot', 'camel-spring-boot-starter'),
-        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-jackson</artifactId>': 
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-jackson</artifactId>':
             ('org.apache.camel.springboot', 'camel-jackson-starter'),
-        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-test-spring</artifactId>': 
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-test-spring</artifactId>':
             ('org.apache.camel', 'camel-test-spring-junit5'),
-        r'<groupId>org\.apache\.activemq</groupId>\s*<artifactId>activemq-camel</artifactId>': 
-            ('org.apache.camel.springboot', 'camel-jms-starter')
+        r'<groupId>org\.apache\.activemq</groupId>\s*<artifactId>activemq-camel</artifactId>':
+            ('org.apache.camel.springboot', 'camel-jms-starter'),
+        r'<groupId>org\.apache\.camel</groupId>\s*<artifactId>camel-swagger-java</artifactId>':
+            ('org.apache.camel', 'camel-openapi-java')
     }
     
     # First remove all matched dependencies to avoid duplicates

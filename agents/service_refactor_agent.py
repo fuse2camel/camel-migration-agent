@@ -67,13 +67,16 @@ class ServiceRefactorAgent:
                 self.refactor_java_tool,
                 self.analyze_java_tool,
                 self.generate_processor_tool,
-                # New Jakarta EE tools
+                # Jakarta EE tools
                 self.migrate_jakarta_imports_tool,
                 self.scan_javax_usage_tool,
-                # New Spring Boot tools
+                # Swagger to OpenAPI tools
+                self.scan_swagger_usage_tool,
+                self.migrate_swagger_to_openapi_tool,
+                # Spring Boot tools
                 self.migrate_spring_properties_tool,
                 self.migrate_spring_yaml_tool,
-                # New Java modernization tools
+                # Java modernization tools
                 self.analyze_java_modernization_tool,
                 self.analyze_modernization_opportunities_tool
             ]
@@ -239,6 +242,372 @@ public class {class_name} implements Processor {{
         except Exception as e:
             return self._create_error_response(file_path, e)
 
+    # ===== Swagger to OpenAPI Migration Tools =====
+
+    @tool("Scan Swagger Usage")
+    def scan_swagger_usage_tool(self, file_path: str) -> str:
+        """
+        Scan a Java file for Swagger v2 annotations that need OpenAPI v3 migration.
+
+        Args:
+            file_path: Path to Java source file
+
+        Returns:
+            JSON string with found Swagger annotations categorized
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+
+            import re
+
+            swagger_annotations = {
+                "api": [],
+                "model": [],
+                "operations": [],
+                "parameters": [],
+                "responses": []
+            }
+
+            # Check for @Api
+            if re.search(r'@Api\s*\(', source_code):
+                swagger_annotations["api"].append("@Api")
+
+            # Check for @ApiModel
+            if re.search(r'@ApiModel\s*\(', source_code):
+                swagger_annotations["model"].append("@ApiModel")
+
+            # Check for @ApiModelProperty
+            api_prop_matches = re.findall(r'@ApiModelProperty\s*\([^)]+\)', source_code)
+            if api_prop_matches:
+                swagger_annotations["model"].append(f"@ApiModelProperty ({len(api_prop_matches)} occurrences)")
+
+            # Check for @ApiOperation
+            if re.search(r'@ApiOperation\s*\(', source_code):
+                swagger_annotations["operations"].append("@ApiOperation")
+
+            # Check for @ApiParam
+            if re.search(r'@ApiParam\s*\(', source_code):
+                swagger_annotations["parameters"].append("@ApiParam")
+
+            # Check for @ApiResponse/@ApiResponses
+            if re.search(r'@ApiResponses?\s*\(', source_code):
+                swagger_annotations["responses"].append("@ApiResponse/@ApiResponses")
+
+            # Count total annotations
+            total = sum(len(v) for v in swagger_annotations.values())
+
+            # Check for Swagger imports
+            swagger_imports = []
+            import_pattern = r'import\s+io\.swagger\.annotations\.([A-Za-z]+);'
+            import_matches = re.findall(import_pattern, source_code)
+            for match in import_matches:
+                swagger_imports.append(f"io.swagger.annotations.{match}")
+
+            return self._create_success_response(
+                file_path,
+                total_swagger_annotations=total,
+                swagger_imports=swagger_imports,
+                categorized=swagger_annotations,
+                needs_migration=total > 0 or len(swagger_imports) > 0
+            )
+        except Exception as e:
+            return self._create_error_response(file_path, e)
+
+    @tool("Migrate Swagger to OpenAPI")
+    def migrate_swagger_to_openapi_tool(self, file_path: str) -> str:
+        """
+        Migrate Swagger v2 annotations to OpenAPI v3 annotations in a Java file.
+
+        Args:
+            file_path: Path to Java source file
+
+        Returns:
+            JSON string with migration results
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+
+            import re
+
+            # Check if file contains Swagger annotations
+            has_swagger = False
+            swagger_patterns = [
+                r'import\s+io\.swagger\.annotations\.',
+                r'@ApiModel',
+                r'@ApiModelProperty',
+                r'@Api\s*\(',
+                r'@ApiOperation',
+                r'@ApiParam',
+                r'@ApiResponse'
+            ]
+
+            for pattern in swagger_patterns:
+                if re.search(pattern, source_code):
+                    has_swagger = True
+                    break
+
+            if not has_swagger:
+                return json.dumps({"status": "no_changes", "file": file_path, "message": "No Swagger annotations found"}, indent=2)
+
+            modified_code = source_code
+            transformation_count = 0
+
+            # Replace Swagger imports with OpenAPI v3 imports
+            swagger_import_mappings = {
+                'import io.swagger.annotations.Api;': 'import io.swagger.v3.oas.annotations.tags.Tag;',
+                'import io.swagger.annotations.ApiModel;': 'import io.swagger.v3.oas.annotations.media.Schema;',
+                'import io.swagger.annotations.ApiModelProperty;': 'import io.swagger.v3.oas.annotations.media.Schema;',
+                'import io.swagger.annotations.ApiOperation;': 'import io.swagger.v3.oas.annotations.Operation;',
+                'import io.swagger.annotations.ApiParam;': 'import io.swagger.v3.oas.annotations.Parameter;',
+                'import io.swagger.annotations.ApiResponse;': 'import io.swagger.v3.oas.annotations.responses.ApiResponse;',
+                'import io.swagger.annotations.ApiResponses;': 'import io.swagger.v3.oas.annotations.responses.ApiResponses;'
+            }
+
+            for old_import, new_import in swagger_import_mappings.items():
+                if old_import in modified_code:
+                    modified_code = modified_code.replace(old_import, new_import)
+                    transformation_count += 1
+
+            # Replace @Api annotations with @Tag
+            api_pattern = r'@Api\s*\(\s*([^)]+)\s*\)'
+            api_matches = re.finditer(api_pattern, modified_code)
+            for match in api_matches:
+                old_annotation = match.group(0)
+                params_str = match.group(1)
+
+                # Parse parameters
+                value = None
+                tags = None
+
+                value_match = re.search(r'value\s*=\s*"([^"]*)"', params_str)
+                if value_match:
+                    value = value_match.group(1)
+
+                tags_match = re.search(r'tags\s*=\s*"([^"]*)"', params_str)
+                if tags_match:
+                    tags = tags_match.group(1)
+
+                # Build new @Tag annotation
+                new_params = []
+                if value:
+                    new_params.append(f'name = "{value}"')
+                elif tags:
+                    new_params.append(f'name = "{tags}"')
+
+                new_annotation = f'@Tag({", ".join(new_params)})' if new_params else '@Tag'
+                modified_code = modified_code.replace(old_annotation, new_annotation)
+                transformation_count += 1
+
+            # Replace @ApiModel annotations with @Schema
+            api_model_pattern = r'@ApiModel\s*\(((?:[^)]|\n)*)\)'
+            api_model_matches = list(re.finditer(api_model_pattern, modified_code, re.MULTILINE | re.DOTALL))
+            for match in api_model_matches:
+                old_annotation = match.group(0)
+                params_str = match.group(1)
+
+                # Clean up the params string - remove newlines and extra spaces
+                params_str = ' '.join(params_str.split())
+
+                # Parse parameters
+                description = None
+                value = None
+
+                desc_match = re.search(r'description\s*=\s*"([^"]*)"', params_str)
+                if desc_match:
+                    description = desc_match.group(1)
+
+                value_match = re.search(r'value\s*=\s*"([^"]*)"', params_str)
+                if value_match:
+                    value = value_match.group(1)
+
+                # Build new @Schema annotation
+                new_params = []
+                if description:
+                    new_params.append(f'description = "{description}"')
+                if value:
+                    new_params.append(f'name = "{value}"')
+
+                new_annotation = f'@Schema({", ".join(new_params)})' if new_params else '@Schema'
+                modified_code = modified_code.replace(old_annotation, new_annotation)
+                transformation_count += 1
+
+            # Replace @ApiModelProperty annotations with @Schema
+            # First, find all @ApiModelProperty annotations including multi-line ones
+            # This pattern matches from @ApiModelProperty( to the matching closing )
+            api_property_pattern = r'@ApiModelProperty\s*\([^)]*(?:\n[^)]*)*\)'
+            api_property_matches = list(re.finditer(api_property_pattern, modified_code, re.MULTILINE))
+
+            # Process matches in reverse order to maintain correct positions
+            for match in reversed(api_property_matches):
+                old_annotation = match.group(0)
+
+                # Extract just the parameters part (everything between parentheses)
+                params_match = re.search(r'@ApiModelProperty\s*\((.*)\)', old_annotation, re.DOTALL)
+                if not params_match:
+                    continue
+
+                params_str = params_match.group(1)
+                # Clean up the params string - normalize whitespace
+                params_str = ' '.join(params_str.split())
+
+                # Parse parameters
+                name = None
+                value = None
+                data_type = None
+                required = None
+                example = None
+                hidden = None
+
+                # Use more precise patterns to avoid false matches
+                name_match = re.search(r'name\s*=\s*"([^"]*)"', params_str)
+                if name_match:
+                    name = name_match.group(1)
+
+                value_match = re.search(r'value\s*=\s*"([^"]*)"', params_str)
+                if value_match:
+                    value = value_match.group(1)
+
+                data_type_match = re.search(r'dataType\s*=\s*"([^"]*)"', params_str)
+                if data_type_match:
+                    data_type = data_type_match.group(1)
+
+                required_match = re.search(r'required\s*=\s*(true|false)', params_str)
+                if required_match:
+                    required = required_match.group(1)
+
+                example_match = re.search(r'example\s*=\s*"([^"]*)"', params_str)
+                if example_match:
+                    example = example_match.group(1)
+
+                hidden_match = re.search(r'hidden\s*=\s*(true|false)', params_str)
+                if hidden_match:
+                    hidden = hidden_match.group(1)
+
+                # Build new @Schema annotation
+                new_params = []
+                if name:
+                    new_params.append(f'name = "{name}"')
+                if value:
+                    new_params.append(f'description = "{value}"')
+                if data_type:
+                    new_params.append(f'type = "{data_type}"')
+                if required:
+                    new_params.append(f'required = {required}')
+                if example:
+                    new_params.append(f'example = "{example}"')
+                if hidden:
+                    new_params.append(f'hidden = {hidden}')
+
+                # Create the new annotation
+                if new_params:
+                    # Determine appropriate formatting based on number of parameters
+                    if len(new_params) <= 2:
+                        new_annotation = f'@Schema({", ".join(new_params)})'
+                    else:
+                        # Multi-line format for readability when many parameters
+                        new_annotation = '@Schema(\n        ' + ',\n        '.join(new_params) + '\n    )'
+                else:
+                    new_annotation = '@Schema'
+
+                # Replace the entire old annotation with the new one
+                modified_code = modified_code.replace(old_annotation, new_annotation)
+                transformation_count += 1
+
+            # Replace @ApiOperation annotations with @Operation
+            api_operation_pattern = r'@ApiOperation\s*\(\s*([^)]+)\s*\)'
+            api_operation_matches = re.finditer(api_operation_pattern, modified_code)
+            for match in api_operation_matches:
+                old_annotation = match.group(0)
+                params_str = match.group(1)
+
+                # Parse parameters
+                value = None
+                notes = None
+
+                value_match = re.search(r'value\s*=\s*"([^"]*)"', params_str)
+                if value_match:
+                    value = value_match.group(1)
+
+                notes_match = re.search(r'notes\s*=\s*"([^"]*)"', params_str)
+                if notes_match:
+                    notes = notes_match.group(1)
+
+                # Build new @Operation annotation
+                new_params = []
+                if value:
+                    new_params.append(f'summary = "{value}"')
+                if notes:
+                    new_params.append(f'description = "{notes}"')
+
+                new_annotation = f'@Operation({", ".join(new_params)})' if new_params else '@Operation'
+                modified_code = modified_code.replace(old_annotation, new_annotation)
+                transformation_count += 1
+
+            # Replace @ApiParam annotations with @Parameter
+            api_param_pattern = r'@ApiParam\s*\(\s*([^)]+)\s*\)'
+            api_param_matches = re.finditer(api_param_pattern, modified_code)
+            for match in api_param_matches:
+                old_annotation = match.group(0)
+                params_str = match.group(1)
+
+                # Parse parameters
+                value = None
+                required = None
+
+                value_match = re.search(r'value\s*=\s*"([^"]*)"', params_str)
+                if value_match:
+                    value = value_match.group(1)
+
+                required_match = re.search(r'required\s*=\s*(true|false)', params_str)
+                if required_match:
+                    required = required_match.group(1)
+
+                # Build new @Parameter annotation
+                new_params = []
+                if value:
+                    new_params.append(f'description = "{value}"')
+                if required:
+                    new_params.append(f'required = {required}')
+
+                new_annotation = f'@Parameter({", ".join(new_params)})' if new_params else '@Parameter'
+                modified_code = modified_code.replace(old_annotation, new_annotation)
+                transformation_count += 1
+
+            if transformation_count > 0:
+                # Clean up duplicate imports
+                lines = modified_code.split('\n')
+                seen_imports = set()
+                cleaned_lines = []
+
+                for line in lines:
+                    # Check if this is an import line
+                    if line.strip().startswith('import '):
+                        if line not in seen_imports:
+                            seen_imports.add(line)
+                            cleaned_lines.append(line)
+                        # Skip duplicate imports
+                    else:
+                        cleaned_lines.append(line)
+
+                modified_code = '\n'.join(cleaned_lines)
+
+                # Write the modified code back to the file
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(modified_code)
+
+                return self._create_success_response(
+                    file_path,
+                    transformations=transformation_count,
+                    message=f"Migrated {transformation_count} Swagger annotations to OpenAPI v3"
+                )
+            else:
+                return json.dumps({"status": "no_changes", "file": file_path}, indent=2)
+
+        except Exception as e:
+            return self._create_error_response(file_path, e)
+
     # ===== Spring Boot Migration Tools =====
 
     @tool("Migrate Spring Boot Properties")
@@ -381,37 +750,49 @@ public class {class_name} implements Processor {{
             **PHASE 1: Analysis & Discovery**
             1. Analyze all Java files in: {source_code_path}
             2. Use scan_javax_usage_tool on EVERY .java file to find javax.* imports
-            3. Identify Processor implementations and RouteBuilder classes
-            4. Identify Bean components and Transformers
-            5. Check for Spring Boot application.properties and application.yml files
+            3. Use scan_swagger_usage_tool on EVERY .java file to find Swagger annotations
+            4. Identify Processor implementations and RouteBuilder classes
+            5. Identify Bean components and Transformers
+            6. Check for Spring Boot application.properties and application.yml files
 
             **PHASE 2: Camel 4 API Migration**
-            6. Update Exchange API usage: getIn() -> getMessage(), getOut() -> getMessage()
-            7. Fix imports for relocated classes: org.apache.camel.impl.* -> org.apache.camel.support.*
-            8. Update deprecated method calls and patterns
-            9. Add @Component annotations to RouteBuilder classes
-            10. Use refactor_java_tool to apply Camel 4 transformations
+            7. Update Exchange API usage: getIn() -> getMessage(), getOut() -> getMessage()
+            8. Fix imports for relocated classes: org.apache.camel.impl.* -> org.apache.camel.support.*
+            9. Update deprecated method calls and patterns
+            10. Add @Component annotations to RouteBuilder classes
+            11. Use refactor_java_tool to apply Camel 4 transformations
 
             **PHASE 3: Jakarta EE Migration (REQUIRED)**
-            11. For EACH Java file with javax.* imports found in Phase 1:
+            12. For EACH Java file with javax.* imports found in Phase 1:
                 - Use migrate_jakarta_imports_tool to convert javax.* -> jakarta.*
                 - Verify javax.validation.* -> jakarta.validation.*
                 - Verify javax.inject.* -> jakarta.inject.*
                 - Verify javax.annotation.* -> jakarta.annotation.*
                 - Verify javax.persistence.* -> jakarta.persistence.*
                 - Verify javax.servlet.* -> jakarta.servlet.*
-            12. Report all Jakarta EE migrations performed
+            13. Report all Jakarta EE migrations performed
 
-            **PHASE 4: Spring Boot 2 -> 3 Migration (if applicable)**
-            13. If application.properties exists: use migrate_spring_properties_tool
-            14. If application.yml exists: use migrate_spring_yaml_tool
-            15. Migrate deprecated Spring Boot 2.x configurations
+            **PHASE 4: Swagger to OpenAPI Migration (REQUIRED)**
+            14. For EACH Java file with Swagger annotations found in Phase 1:
+                - Use migrate_swagger_to_openapi_tool to convert Swagger v2 to OpenAPI v3
+                - Convert @ApiModel -> @Schema
+                - Convert @ApiModelProperty -> @Schema
+                - Convert @Api -> @Tag
+                - Convert @ApiOperation -> @Operation
+                - Update all io.swagger.annotations imports to io.swagger.v3.oas.annotations
+            15. Report all Swagger to OpenAPI migrations performed
 
-            **PHASE 5: Verification & Reporting**
-            16. Ensure ALL business logic remains intact
-            17. Generate comprehensive report with:
+            **PHASE 5: Spring Boot 2 -> 3 Migration (if applicable)**
+            16. If application.properties exists: use migrate_spring_properties_tool
+            17. If application.yml exists: use migrate_spring_yaml_tool
+            18. Migrate deprecated Spring Boot 2.x configurations
+
+            **PHASE 6: Verification & Reporting**
+            19. Ensure ALL business logic remains intact
+            20. Generate comprehensive report with:
                 - Number of Camel 4 transformations
                 - Number of javax -> jakarta migrations
+                - Number of Swagger to OpenAPI migrations
                 - Number of Spring Boot migrations
                 - List of all modified files
 
@@ -419,16 +800,19 @@ public class {class_name} implements Processor {{
 
             **REMEMBER:**
             - Use scan_javax_usage_tool FIRST to find javax imports
+            - Use scan_swagger_usage_tool FIRST to find Swagger annotations
             - Use migrate_jakarta_imports_tool on ALL files with javax imports
+            - Use migrate_swagger_to_openapi_tool on ALL files with Swagger annotations
             - Use migrate_spring_properties_tool on properties files
             - This is a COMPLETE migration, not just Camel 4!
             """,
             expected_output="""Comprehensive migration report including:
             1. Camel 4 API updates (getIn/getOut -> getMessage)
             2. Jakarta EE migrations (javax -> jakarta) with file-by-file details
-            3. Spring Boot 2->3 property migrations
-            4. Import relocations (org.apache.camel.impl -> support)
-            5. Complete list of all modified files with change summaries""",
+            3. Swagger to OpenAPI migrations (@ApiModel -> @Schema) with file-by-file details
+            4. Spring Boot 2->3 property migrations
+            5. Import relocations (org.apache.camel.impl -> support)
+            6. Complete list of all modified files with change summaries""",
             agent=self.agent
         )
     
@@ -643,6 +1027,28 @@ def service_refactor_agent(state):
                                 'transformations': jakarta_count
                             })
                             print(f"  ✓ Migrated {jakarta_count} javax references to jakarta in {os.path.basename(java_file)}")
+                    # ====================================================
+
+                    # ============ SWAGGER TO OPENAPI MIGRATION ==========
+                    # Apply Swagger v2 to OpenAPI v3 migration using the tool from tools/swagger_to_openapi.py
+                    from tools.swagger_to_openapi import migrate_content_string
+
+                    # Apply migration directly to content string
+                    migrated_content, migration_details = migrate_content_string(refactored_content)
+
+                    if migration_details.get('total_transformations', 0) > 0:
+                        refactored_content = migrated_content
+
+                        swagger_count = migration_details.get('swagger_transformations', 0)
+                        jakarta_extra = migration_details.get('jakarta_transformations', 0)
+
+                        if swagger_count > 0:
+                            print(f"  ✓ Migrated {swagger_count} Swagger annotations to OpenAPI v3 in {os.path.basename(java_file)}")
+                        if jakarta_extra > 0:
+                            # Update jakarta count if it exists
+                            if 'jakarta_count' in locals():
+                                jakarta_count += jakarta_extra
+                            print(f"  ✓ Additional {jakarta_extra} javax->jakarta migrations from Swagger tool")
                     # ====================================================
 
                     if refactored_content != original_content:

@@ -7,7 +7,10 @@ __pycache__/
 *.so
 .claude
 .history/
-artifacts/jdk21
+# Artifacts directory - contains runtime files and logs that may have secrets
+artifacts/
+# Allow specific artifacts if needed
+!artifacts/.gitkeep
 # Distribution / packaging
 .Python
 build/
